@@ -26,12 +26,14 @@ type Source = {
   page: number;
   snippet: string;
   relevance: number;
+  cited: boolean;
 };
 
 type AskResponse = {
   answer: string;
   sources: Source[];
   grounded: boolean;
+  cited_pages: number[];
 };
 
 const suggestions = [
@@ -191,21 +193,42 @@ export default function Home() {
 
                 {!loading && result && (
                   <div>
-                    <div className="mb-5 flex items-center gap-2">
+                    <div className="mb-5 flex flex-wrap items-center gap-2">
                       <Badge className={result.grounded ? 'bg-cyan-100 text-cyan-900' : 'bg-orange-100 text-orange-900'}>
                         {result.grounded ? '근거 확인됨' : '근거 없음'}
                       </Badge>
+                      {result.cited_pages.map((page) => (
+                        <a
+                          key={page}
+                          href={`/paper.pdf#page=${page}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex h-6 items-center gap-1 rounded-full border border-cyan-200 bg-white px-2.5 text-xs font-medium text-cyan-800 hover:bg-cyan-50"
+                        >
+                          <FileText className="size-3" /> {page}페이지
+                        </a>
+                      ))}
                     </div>
                     <p className="text-lg leading-8 text-slate-700">{result.answer}</p>
                     {result.sources.length > 0 && (
                       <div className="mt-7 space-y-3 border-t border-slate-200 pt-5">
-                        <p className="text-sm font-semibold text-slate-900">검색 근거</p>
+                        <p className="text-sm font-semibold text-slate-900">검색 근거 <span className="font-normal text-slate-500">· 페이지를 누르면 PDF 해당 페이지가 열립니다</span></p>
                         {result.sources.map((source, index) => (
-                          <div key={`${source.page}-${index}`} className="rounded-xl border border-slate-200 bg-white p-4">
+                          <div
+                            key={`${source.page}-${index}`}
+                            className={`rounded-xl border bg-white p-4 ${source.cited ? 'border-cyan-300' : 'border-slate-200'}`}
+                          >
                             <div className="mb-2 flex items-center justify-between">
-                              <span className="flex items-center gap-2 text-sm font-semibold text-cyan-800">
+                              <a
+                                href={`/paper.pdf#page=${source.page}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="flex items-center gap-2 text-sm font-semibold text-cyan-800 hover:underline"
+                              >
                                 <FileText className="size-4" /> PDF {source.page}페이지
-                              </span>
+                                <ArrowUpRight className="size-3.5" />
+                                {source.cited && <span className="text-xs font-normal text-slate-500">답변에 인용됨</span>}
+                              </a>
                               <span className="font-mono text-xs text-slate-400">{source.relevance.toFixed(2)}</span>
                             </div>
                             <p className="text-sm leading-6 text-slate-600">{source.snippet}</p>

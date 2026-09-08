@@ -10,7 +10,9 @@
 - Gemini `gemini-embedding-001` 임베딩
 - 서버 없이 파일로 저장되는 로컬 Chroma 인덱스
 - LangChain prompt/model/output parser 파이프라인
-- 유사도 임계값과 제한 프롬프트를 이용한 범위 밖 질문 처리
+- Gemini JSON 모드로 `answer`, `has_evidence`, `cited_pages`를 구조화해 받고, `grounded` 판정을 답변 문자열과 분리
+- 유사도 임계값(1차)과 모델의 `has_evidence`(2차)를 함께 써서 범위 밖 질문 차단
+- 청크 안에서 질문과 가장 겹치는 문장을 근거 문장으로 반환하고, UI에서 PDF 해당 페이지로 링크
 - FastAPI `POST /ask`
 - React 질문·답변·출처 확인 화면
 
@@ -33,12 +35,12 @@ backend/
   api.py        FastAPI 엔드포인트와 CORS 설정
   ingest.py     PDF 페이지 추출과 청크 분할
   models.py     요청·응답 스키마
-  service.py    임베딩, FAISS 검색, Gemini 답변
+  service.py    인덱스 생성·검증, Chroma 검색, Gemini 구조화 답변
 data/
   paper.pdf     검색 대상 논문
 scripts/
   build_index.py
-  evaluate.py   논문 내·외 질문 6개 검증
+  evaluate.py   논문 내 5개·범위 밖 6개 질문으로 점수 분포와 차단 결과 확인
 tests/
 web/            React UI
 ```
@@ -56,17 +58,21 @@ cp .env.example .env
 
 ```dotenv
 GOOGLE_API_KEY=your_key_here
-GEMINI_CHAT_MODEL=gemini-2.5-flash
+GEMINI_CHAT_MODEL=gemini-3.6-flash
 GEMINI_EMBEDDING_MODEL=models/gemini-embedding-001
-RAG_MIN_RELEVANCE=0.35
+RAG_MIN_RELEVANCE=0.60
 ```
 
 ## 실행
 
-최초 한 번 Chroma 인덱스를 생성합니다.
+최초 한 번 Chroma 인덱스를 생성합니다. 인덱스가 없거나 비어 있으면 서버가 `/ask`에서 503으로 알려줍니다. 청크 설정을 바꿨다면 `--rebuild`로 다시 만듭니다.
 
 ```bash
 uv run python scripts/build_index.py
+```
+
+```bash
+uv run python scripts/build_index.py --rebuild
 ```
 
 백엔드를 실행합니다.
@@ -85,7 +91,7 @@ npm run dev
 
 - React: http://localhost:3000
 - FastAPI 문서: http://127.0.0.1:8000/docs
-- 상태 확인: http://127.0.0.1:8000/health
+- 상태 확인: http://127.0.0.1:8000/health (`document_count`로 인덱스 청크 수 확인)
 
 ## API
 
@@ -103,26 +109,44 @@ curl -X POST http://127.0.0.1:8000/ask \
   "sources": [
     {
       "page": 5,
-      "snippet": "...표 1 추천 성능 평가...",
-      "relevance": 0.82
+      "snippet": "표 1은 추천 성능 평가 결과이다. 그룹 추천의 F-measure는 0.15435이다.",
+      "relevance": 0.82,
+      "cited": true
     }
   ],
-  "grounded": true
+  "grounded": true,
+  "cited_pages": [5]
 }
 ```
 
 ## 검증 질문
 
-`uv run python scripts/evaluate.py`를 실행하면 다음 질문을 실제 검색과 Gemini 호출로 검사합니다.
+`uv run python scripts/evaluate.py`를 실행하면 논문 내 질문 5개와 범위 밖 질문 6개를 실제 검색과 Gemini 호출로 검사하고, 질문별 검색 점수·grounded 판정·인용 페이지와 함께 임계값 제안을 출력합니다.
+
+```bash
+uv run python scripts/evaluate.py --json data/evaluation.json
+```
+
+논문 내 질문:
 
 1. 이 논문이 해결하려는 문제는 무엇인가요?
 2. 그룹 추천은 어떤 세 단계로 구성되나요?
 3. 사용자 간 유사도 계산에는 어떤 지표를 사용했나요?
 4. 실험 데이터의 사용자 수와 거래 데이터 수는 얼마인가요?
 5. 제안 방법의 F-measure는 얼마인가요?
-6. 저자가 가장 좋아하는 음식은 무엇인가요? - 문서에 없는 질문
 
-단위 테스트는 외부 API를 호출하지 않고 페이지 metadata 보존, 근거 반환, 유사도 임계값, API 응답 구조를 검증합니다.
+범위 밖 질문:
+
+6. 저자가 가장 좋아하는 음식은 무엇인가요?
+7. 내일 서울 날씨는 어떤가요?
+8. 파이썬에서 리스트를 정렬하는 방법은 무엇인가요?
+9. 삼성전자의 올해 주가 전망은 어떤가요?
+10. 이 논문의 저자가 태어난 해는 언제인가요? - 논문 어휘를 쓰지만 본문에 없는 정보
+11. 넷플릭스에서 지금 가장 인기 있는 드라마는 무엇인가요? - 추천 도메인과 겹치는 무관한 질문
+
+임계값 `RAG_MIN_RELEVANCE`는 논문 내 질문의 최고 점수 최솟값과 범위 밖 질문의 최고 점수 최댓값 사이에 둡니다. 두 구간이 겹치면 임계값은 논문 내 질문을 놓치지 않는 값으로 두고 모델의 `has_evidence` 판정이 차단을 담당합니다.
+
+단위 테스트는 외부 API를 호출하지 않고 페이지 metadata 보존, 근거 문장 선택, 구조화 답변 파싱과 grounded 판정, 빈 인덱스 감지, API 응답 구조를 검증합니다.
 
 ```bash
 uv run ruff check .
@@ -134,5 +158,6 @@ uv run pytest
 
 - 7페이지 단일 논문에 맞춘 데모이며 여러 문서 업로드 기능은 없습니다.
 - PDF의 표와 수식은 텍스트 추출 결과에 따라 순서가 달라질 수 있습니다.
-- 유사도 임계값 `0.35`는 초기값입니다. 실제 평가 질문 결과에 맞춰 조정해야 합니다.
+- 평가 질문에서 논문 내 최고 점수는 `0.683~0.774`, 범위 밖 질문은 `0.502~0.667`이었습니다. 현재 임계값 `0.60`은 관련 질문의 재현율을 보존하는 1차 필터이며, 경계에 걸친 질문은 모델의 `has_evidence`가 2차로 차단합니다.
+- 근거 문장은 질문과 글자 2-gram이 가장 많이 겹치는 문장을 고르는 단순 방식입니다.
 - 답변 품질은 Gemini 모델과 검색된 청크에 영향을 받습니다.

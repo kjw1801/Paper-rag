@@ -1,4 +1,3 @@
-import os
 from functools import lru_cache
 from typing import Annotated
 
@@ -8,7 +7,7 @@ from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.models import AskRequest, AskResponse, HealthResponse
-from backend.service import INDEX_PATH, RAGService
+from backend.service import RAGService, api_key_configured, index_document_count
 
 load_dotenv()
 
@@ -39,12 +38,12 @@ ServiceDependency = Annotated[RAGService, Depends(get_service)]
 
 @app.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
+    count = index_document_count()
     return HealthResponse(
         status="ok",
-        api_key_configured=bool(
-            os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
-        ),
-        index_ready=INDEX_PATH.exists(),
+        api_key_configured=api_key_configured(),
+        index_ready=count > 0,
+        document_count=count,
     )
 
 

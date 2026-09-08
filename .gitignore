@@ -6,6 +6,7 @@ __pycache__/
 .pyright/
 tmp/
 data/chroma/
+Paper-rag/
 web/node_modules/
 web/dist/
 .DS_Store

@@ -1,0 +1,315 @@
+{
+  "min_relevance": 0.6,
+  "correct": 11,
+  "total": 11,
+  "suggested_threshold": 0.675,
+  "results": [
+    {
+      "question": "이 논문이 해결하려는 문제는 무엇인가요?",
+      "expected_grounded": true,
+      "grounded": true,
+      "correct": true,
+      "top_score": 0.6861,
+      "scores": [
+        {
+          "page": 4,
+          "score": 0.6861
+        },
+        {
+          "page": 6,
+          "score": 0.683
+        },
+        {
+          "page": 1,
+          "score": 0.6819
+        },
+        {
+          "page": 1,
+          "score": 0.6803
+        }
+      ],
+      "answer": "이 논문은 책, 음악, 영화 등 단일 항목을 추천하던 기존 방법의 한계를 극복하고, 패션, 요리 등과 같이 연관성에 따른 항목의 조합(그룹)을 추천하는 문제를 해결하고자 합니다.",
+      "cited_pages": [
+        1
+      ]
+    },
+    {
+      "question": "그룹 추천은 어떤 세 단계로 구성되나요?",
+      "expected_grounded": true,
+      "grounded": true,
+      "correct": true,
+      "top_score": 0.751,
+      "scores": [
+        {
+          "page": 4,
+          "score": 0.751
+        },
+        {
+          "page": 5,
+          "score": 0.7361
+        },
+        {
+          "page": 4,
+          "score": 0.7048
+        },
+        {
+          "page": 4,
+          "score": 0.703
+        }
+      ],
+      "answer": "제안하는 그룹 추천 방법은 다음의 세 단계로 구성됩니다:\n1. 전체 사용자에 대한 각 항목별 선호도 행렬에서 빈발 패턴을 생성하는 단계\n2. 빈발 패턴과 협업 필터링 예측 값을 바탕으로 사용자와 패턴, 그룹 유사도를 계산하는 단계\n3. 유사도를 바탕으로 예측 값을 계산하고 그룹 추천 목록을 생성하는 단계",
+      "cited_pages": [
+        4
+      ]
+    },
+    {
+      "question": "사용자 간 유사도 계산에는 어떤 지표를 사용했나요?",
+      "expected_grounded": true,
+      "grounded": true,
+      "correct": true,
+      "top_score": 0.7736,
+      "scores": [
+        {
+          "page": 4,
+          "score": 0.7736
+        },
+        {
+          "page": 2,
+          "score": 0.767
+        },
+        {
+          "page": 3,
+          "score": 0.7591
+        },
+        {
+          "page": 3,
+          "score": 0.7473
+        }
+      ],
+      "answer": "본 논문에서는 사용자 간의 유사도를 계산하기 위해 자카드 계수(Jaccard Coefficient)를 사용하였습니다.",
+      "cited_pages": [
+        2
+      ]
+    },
+    {
+      "question": "실험 데이터의 사용자 수와 거래 데이터 수는 얼마인가요?",
+      "expected_grounded": true,
+      "grounded": true,
+      "correct": true,
+      "top_score": 0.6828,
+      "scores": [
+        {
+          "page": 5,
+          "score": 0.6828
+        },
+        {
+          "page": 5,
+          "score": 0.6759
+        },
+        {
+          "page": 1,
+          "score": 0.6599
+        },
+        {
+          "page": 3,
+          "score": 0.6527
+        }
+      ],
+      "answer": "실험 데이터의 사용자 수는 총 248명이며, 선호도 데이터 수는 19,105개입니다. '거래 데이터 수'에 대한 구체적인 수치는 문맥에 명시되어 있지 않습니다.",
+      "cited_pages": [
+        5
+      ]
+    },
+    {
+      "question": "제안 방법의 F-measure는 얼마인가요?",
+      "expected_grounded": true,
+      "grounded": true,
+      "correct": true,
+      "top_score": 0.7467,
+      "scores": [
+        {
+          "page": 3,
+          "score": 0.7467
+        },
+        {
+          "page": 5,
+          "score": 0.7244
+        },
+        {
+          "page": 3,
+          "score": 0.6984
+        },
+        {
+          "page": 1,
+          "score": 0.6727
+        }
+      ],
+      "answer": "제안 방법인 그룹 추천(Group recommendation)의 F-measure는 0.15435입니다.",
+      "cited_pages": [
+        5
+      ]
+    },
+    {
+      "question": "저자가 가장 좋아하는 음식은 무엇인가요?",
+      "expected_grounded": false,
+      "grounded": false,
+      "correct": true,
+      "top_score": 0.5912,
+      "scores": [
+        {
+          "page": 6,
+          "score": 0.5912
+        },
+        {
+          "page": 6,
+          "score": 0.5759
+        },
+        {
+          "page": 7,
+          "score": 0.5732
+        },
+        {
+          "page": 3,
+          "score": 0.5671
+        }
+      ],
+      "answer": "제공된 논문에서 이 질문에 답할 근거를 찾지 못했습니다.",
+      "cited_pages": []
+    },
+    {
+      "question": "내일 서울 날씨는 어떤가요?",
+      "expected_grounded": false,
+      "grounded": false,
+      "correct": true,
+      "top_score": 0.538,
+      "scores": [
+        {
+          "page": 1,
+          "score": 0.538
+        },
+        {
+          "page": 3,
+          "score": 0.5378
+        },
+        {
+          "page": 6,
+          "score": 0.5315
+        },
+        {
+          "page": 3,
+          "score": 0.5313
+        }
+      ],
+      "answer": "제공된 논문에서 이 질문에 답할 근거를 찾지 못했습니다.",
+      "cited_pages": []
+    },
+    {
+      "question": "파이썬에서 리스트를 정렬하는 방법은 무엇인가요?",
+      "expected_grounded": false,
+      "grounded": false,
+      "correct": true,
+      "top_score": 0.5446,
+      "scores": [
+        {
+          "page": 4,
+          "score": 0.5446
+        },
+        {
+          "page": 4,
+          "score": 0.5342
+        },
+        {
+          "page": 3,
+          "score": 0.5341
+        },
+        {
+          "page": 5,
+          "score": 0.5277
+        }
+      ],
+      "answer": "제공된 논문에서 이 질문에 답할 근거를 찾지 못했습니다.",
+      "cited_pages": []
+    },
+    {
+      "question": "삼성전자의 올해 주가 전망은 어떤가요?",
+      "expected_grounded": false,
+      "grounded": false,
+      "correct": true,
+      "top_score": 0.5023,
+      "scores": [
+        {
+          "page": 6,
+          "score": 0.5023
+        },
+        {
+          "page": 6,
+          "score": 0.5011
+        },
+        {
+          "page": 1,
+          "score": 0.4991
+        },
+        {
+          "page": 7,
+          "score": 0.4965
+        }
+      ],
+      "answer": "제공된 논문에서 이 질문에 답할 근거를 찾지 못했습니다.",
+      "cited_pages": []
+    },
+    {
+      "question": "이 논문의 저자가 태어난 해는 언제인가요?",
+      "expected_grounded": false,
+      "grounded": false,
+      "correct": true,
+      "top_score": 0.6671,
+      "scores": [
+        {
+          "page": 7,
+          "score": 0.6671
+        },
+        {
+          "page": 6,
+          "score": 0.6523
+        },
+        {
+          "page": 6,
+          "score": 0.6299
+        },
+        {
+          "page": 1,
+          "score": 0.6271
+        }
+      ],
+      "answer": "제공된 논문에서 이 질문에 답할 근거를 찾지 못했습니다.",
+      "cited_pages": []
+    },
+    {
+      "question": "넷플릭스에서 지금 가장 인기 있는 드라마는 무엇인가요?",
+      "expected_grounded": false,
+      "grounded": false,
+      "correct": true,
+      "top_score": 0.5112,
+      "scores": [
+        {
+          "page": 1,
+          "score": 0.5112
+        },
+        {
+          "page": 6,
+          "score": 0.4996
+        },
+        {
+          "page": 3,
+          "score": 0.4987
+        },
+        {
+          "page": 1,
+          "score": 0.4958
+        }
+      ],
+      "answer": "제공된 논문에서 이 질문에 답할 근거를 찾지 못했습니다.",
+      "cited_pages": []
+    }
+  ]
+}
