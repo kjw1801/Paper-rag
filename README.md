@@ -1,6 +1,12 @@
 # Paper RAG
 
-본인 논문인 **「협업 필터링과 빈발 패턴을 이용한 개인화된 그룹 추천」**을 대상으로 만든 근거 기반 질의응답 데모입니다. 질문과 의미적으로 가까운 논문 청크를 Chroma에서 검색하고, Gemini가 검색 문맥만으로 답변하도록 제한합니다. 응답에는 근거 문장과 PDF 페이지가 포함됩니다.
+연구 논문 **「협업 필터링과 빈발 패턴을 이용한 개인화된 그룹 추천」**을 대상으로 만든 근거 기반 질의응답 데모입니다. 질문과 의미적으로 가까운 논문 청크를 Chroma에서 검색하고, Gemini가 검색 문맥만으로 답변하도록 제한합니다. 응답에는 근거 문장과 PDF 페이지가 포함됩니다.
+
+## 바로 보기
+
+- **공개 데모:** [paper.woojulab.com](https://paper.woojulab.com/)
+- **논문 원문:** [웹 PDF](https://paper.woojulab.com/paper.pdf) · [KCI](https://www.kci.go.kr/kciportal/ci/sereArticleSearch/ciSereArtiView.kci?sereArticleSearchBean.artiId=ART002130830) · [DBpia](https://www.dbpia.co.kr/journal/articleDetail?nodeId=NODE06747562)
+- **소스 코드:** [github.com/kjw1801/Paper-rag](https://github.com/kjw1801/Paper-rag)
 
 ## 대상 논문
 
