@@ -1,24 +1,57 @@
+import os
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from functools import lru_cache
 from typing import Annotated
 
 import uvicorn
-from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.models import AskRequest, AskResponse, HealthResponse
-from backend.service import RAGService, api_key_configured, index_document_count
+from backend.service import (
+    RAGService,
+    UpstreamRateLimited,
+    api_key_configured,
+    build_index,
+    index_document_count,
+)
 
-load_dotenv()
+DEFAULT_ORIGINS = ["http://localhost:3000", "http://127.0.0.1:3000"]
+
+
+def allowed_origins() -> list[str]:
+    """CORS_ALLOWED_ORIGINS=https://a.example,https://b.example 형태로 배포 주소를 추가한다."""
+    configured = [
+        origin.strip()
+        for origin in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",")
+        if origin.strip()
+    ]
+    return DEFAULT_ORIGINS + [o for o in configured if o not in DEFAULT_ORIGINS]
+
+
+def build_index_on_startup() -> bool:
+    return os.getenv("RAG_BUILD_INDEX_ON_STARTUP", "0").lower() in {"1", "true", "yes"}
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    # 배포 서버처럼 인덱스가 없는 환경에서는 시작 시 한 번 생성한다.
+    if build_index_on_startup() and index_document_count() == 0:
+        count = build_index()
+        print(f"Chroma 인덱스를 생성했습니다 (청크 {count}개)")
+    yield
+
 
 app = FastAPI(
     title="Paper RAG API",
     description="논문 근거와 PDF 페이지를 함께 반환하는 RAG API",
     version="0.1.0",
+    lifespan=lifespan,
 )
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=allowed_origins(),
     allow_credentials=False,
     allow_methods=["GET", "POST"],
     allow_headers=["Content-Type"],
@@ -51,9 +84,16 @@ def health() -> HealthResponse:
 def ask(payload: AskRequest, service: ServiceDependency) -> AskResponse:
     try:
         return service.ask(payload.question, payload.top_k)
+    except UpstreamRateLimited as error:
+        raise HTTPException(status_code=429, detail=str(error)) from error
     except RuntimeError as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
 
 
 def run() -> None:
-    uvicorn.run("backend.api:app", host="127.0.0.1", port=8000, reload=True)
+    uvicorn.run(
+        "backend.api:app",
+        host=os.getenv("HOST", "127.0.0.1"),
+        port=int(os.getenv("PORT", "8000")),
+        reload=os.getenv("RAG_RELOAD", "1") == "1",
+    )

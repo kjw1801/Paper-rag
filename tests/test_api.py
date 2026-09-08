@@ -2,6 +2,7 @@ from fastapi.testclient import TestClient
 
 from backend.api import app, get_service
 from backend.models import AskResponse, Source
+from backend.service import UpstreamRateLimited
 
 
 class StubService:
@@ -43,3 +44,20 @@ def test_health_reports_document_count() -> None:
     assert body["status"] == "ok"
     assert body["document_count"] >= 0
     assert body["index_ready"] == (body["document_count"] > 0)
+
+
+class RateLimitedService:
+    def ask(self, _question: str, _top_k: int) -> AskResponse:
+        raise UpstreamRateLimited("Gemini API 호출 한도를 초과했습니다.")
+
+
+def test_upstream_rate_limit_becomes_429() -> None:
+    app.dependency_overrides[get_service] = lambda: RateLimitedService()
+    try:
+        with TestClient(app) as client:
+            response = client.post("/ask", json={"question": "질문입니다"})
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 429
+    assert "한도" in response.json()["detail"]

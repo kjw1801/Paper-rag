@@ -1,10 +1,20 @@
 import json
 from typing import Any
 
+import pytest
+from google.genai.errors import ClientError
 from langchain_core.documents import Document
 from langchain_core.language_models import FakeListChatModel
+from langchain_google_genai._common import GoogleGenerativeAIError
+from langchain_google_genai.chat_models import GoogleRateLimitError
 
-from backend.service import NO_EVIDENCE_ANSWER, RAGService, best_sentence
+from backend.service import (
+    DEFAULT_MIN_RELEVANCE,
+    NO_EVIDENCE_ANSWER,
+    RAGService,
+    UpstreamRateLimited,
+    best_sentence,
+)
 
 
 class StubVectorStore:
@@ -76,7 +86,7 @@ def test_low_relevance_question_does_not_call_llm() -> None:
     service = RAGService(
         StubVectorStore([(PAGE5, 0.12)]),
         never_called,
-        min_relevance=0.35,
+        min_relevance=DEFAULT_MIN_RELEVANCE,
     )
 
     response = service.ask("저자의 오늘 점심 메뉴는?")
@@ -86,19 +96,35 @@ def test_low_relevance_question_does_not_call_llm() -> None:
     assert response.sources == []
 
 
-def test_malformed_model_output_falls_back_to_raw_text() -> None:
-    plain = RAGService(
-        StubVectorStore([(PAGE5, 0.8)]),
-        FakeListChatModel(responses=["F-measure는 0.15435입니다."]),
-    )
-    refusal = RAGService(
-        StubVectorStore([(PAGE5, 0.8)]),
-        FakeListChatModel(responses=[NO_EVIDENCE_ANSWER]),
-    )
+def test_malformed_model_output_is_never_grounded() -> None:
+    """JSON 형식을 어긴 답변은 검증할 수 없으므로 항상 근거 없음(fail-closed)."""
+    for raw in ("F-measure는 0.15435입니다.", NO_EVIDENCE_ANSWER, "{broken json"):
+        service = RAGService(
+            StubVectorStore([(PAGE5, 0.8)]),
+            FakeListChatModel(responses=[raw]),
+        )
 
-    assert plain.ask("질문").grounded is True
-    assert plain.ask("질문").answer == "F-measure는 0.15435입니다."
-    assert refusal.ask("질문").grounded is False
+        response = service.ask("질문")
+
+        assert response.grounded is False
+        assert response.answer == NO_EVIDENCE_ANSWER
+        assert response.sources == []
+
+
+def test_has_evidence_without_valid_cited_pages_is_not_grounded() -> None:
+    for cited in ([], [99]):
+        service = RAGService(
+            StubVectorStore([(PAGE5, 0.8)]),
+            fake_llm(
+                answer="근거 있는 척하는 답", has_evidence=True, cited_pages=cited
+            ),
+        )
+
+        response = service.ask("질문")
+
+        assert response.grounded is False
+        assert response.answer == NO_EVIDENCE_ANSWER
+        assert response.cited_pages == []
 
 
 def test_best_sentence_picks_sentence_matching_question() -> None:
@@ -112,3 +138,47 @@ def test_best_sentence_picks_sentence_matching_question() -> None:
 
     assert snippet.startswith("실험에는 사용자 100명과 거래 데이터 5000건을")
     assert len(snippet) <= 280
+
+
+class RateLimitedVectorStore:
+    """임베딩 API가 429를 돌려줄 때 langchain-google-genai가 내는 형태를 흉내 낸다."""
+
+    def similarity_search_with_relevance_scores(self, _q: str, *, k: int) -> list[Any]:
+        try:
+            raise ClientError(429, {"error": {"message": "RESOURCE_EXHAUSTED"}})
+        except ClientError as cause:
+            raise GoogleGenerativeAIError("Error embedding content") from cause
+
+
+class RateLimitedChatModel(FakeListChatModel):
+    def _call(self, *args: Any, **kwargs: Any) -> str:
+        raise GoogleRateLimitError("429 RESOURCE_EXHAUSTED")
+
+
+def test_rate_limit_during_retrieval_becomes_upstream_error() -> None:
+    service = RAGService(RateLimitedVectorStore(), FakeListChatModel(responses=[]))
+
+    with pytest.raises(UpstreamRateLimited):
+        service.ask("질문")
+
+
+def test_rate_limit_during_generation_becomes_upstream_error() -> None:
+    service = RAGService(
+        StubVectorStore([(PAGE5, 0.8)]), RateLimitedChatModel(responses=[])
+    )
+
+    with pytest.raises(UpstreamRateLimited):
+        service.ask("질문")
+
+
+def test_other_google_errors_are_not_masked_as_rate_limits() -> None:
+    class BrokenVectorStore:
+        def similarity_search_with_relevance_scores(
+            self, _q: str, *, k: int
+        ) -> list[Any]:
+            raise GoogleGenerativeAIError("Error embedding content: invalid key")
+
+    service = RAGService(BrokenVectorStore(), FakeListChatModel(responses=[]))
+
+    with pytest.raises(GoogleGenerativeAIError):
+        service.ask("질문")

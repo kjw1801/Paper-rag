@@ -1,11 +1,16 @@
+import fcntl
 import os
 import re
 import shutil
+import uuid
 from pathlib import Path
 from typing import Any
 
 import chromadb
+from chromadb.api.shared_system_client import SharedSystemClient
 from chromadb.errors import ChromaError
+from dotenv import load_dotenv
+from google.genai.errors import ClientError
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 from langchain_core.exceptions import OutputParserException
@@ -15,14 +20,21 @@ from langchain_google_genai import (
     ChatGoogleGenerativeAI,
     GoogleGenerativeAIEmbeddings,
 )
+from langchain_google_genai._common import GoogleGenerativeAIError
+from langchain_google_genai.chat_models import GoogleRateLimitError
 
 from backend.ingest import load_pdf_pages, split_pages
 from backend.models import AskResponse, GroundedAnswer, Source
 
+load_dotenv()
+
 ROOT_DIR = Path(__file__).resolve().parents[1]
 PDF_PATH = ROOT_DIR / "data" / "paper.pdf"
-INDEX_PATH = ROOT_DIR / "data" / "chroma"
+# 배포 환경에서는 영구 디스크 경로를 RAG_INDEX_DIR로 지정한다.
+INDEX_PATH = Path(os.getenv("RAG_INDEX_DIR", str(ROOT_DIR / "data" / "chroma")))
 COLLECTION_NAME = "paper"
+# scripts/evaluate.py 실측: 논문 내 질문 최고 점수 0.683~0.774, 범위 밖 0.502~0.667
+DEFAULT_MIN_RELEVANCE = 0.60
 
 NO_EVIDENCE_ANSWER = "제공된 논문에서 이 질문에 답할 근거를 찾지 못했습니다."
 MISSING_INDEX_MESSAGE = (
@@ -31,6 +43,11 @@ MISSING_INDEX_MESSAGE = (
 )
 
 OUTPUT_PARSER = PydanticOutputParser(pydantic_object=GroundedAnswer)
+
+
+class UpstreamRateLimited(RuntimeError):
+    """Gemini 호출 한도(무료 티어 분당·일당 요청 수)를 넘었을 때."""
+
 
 PROMPT = ChatPromptTemplate.from_messages(
     [
@@ -72,33 +89,77 @@ def index_document_count(index_path: Path = INDEX_PATH) -> int:
         return 0
 
 
-def build_index(*, rebuild: bool = False) -> int:
-    """PDF를 청크로 나눠 임베딩하고 Chroma에 저장한다. 저장된 청크 수를 돌려준다."""
-    if not api_key_configured():
-        raise RuntimeError("GOOGLE_API_KEY 또는 GEMINI_API_KEY가 필요합니다.")
+def build_index(
+    *,
+    rebuild: bool = False,
+    embeddings: Any | None = None,
+    index_path: Path = INDEX_PATH,
+) -> int:
+    """PDF를 청크로 나눠 임베딩하고 Chroma에 저장한다. 저장된 청크 수를 돌려준다.
 
-    if INDEX_PATH.exists():
-        if not rebuild and index_document_count() > 0:
-            return index_document_count()
-        shutil.rmtree(INDEX_PATH)
+    새 인덱스는 임시 디렉터리에 먼저 만들고 검증이 끝난 뒤 교체하므로,
+    임베딩 생성이 실패해도 기존 인덱스는 남는다.
+    """
+    if embeddings is None:
+        if not api_key_configured():
+            raise RuntimeError("GOOGLE_API_KEY 또는 GEMINI_API_KEY가 필요합니다.")
+        embeddings = create_embeddings()
 
+    existing = index_document_count(index_path)
+    if existing > 0 and not rebuild:
+        return existing
+
+    # 여러 worker가 동시에 시작해도 한 프로세스만 생성하도록 파일 잠금을 건다
+    index_path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = index_path.with_name(f"{index_path.name}.lock")
+    with lock_path.open("w") as lock_file:
+        fcntl.flock(lock_file, fcntl.LOCK_EX)
+        try:
+            # 잠금을 기다리는 동안 다른 worker가 이미 만들었을 수 있다
+            existing = index_document_count(index_path)
+            if existing > 0 and not rebuild:
+                return existing
+            return _build_index_locked(embeddings, index_path)
+        finally:
+            fcntl.flock(lock_file, fcntl.LOCK_UN)
+
+
+def _build_index_locked(embeddings: Any, index_path: Path) -> int:
     chunks = split_pages(load_pdf_pages(PDF_PATH))
     if not chunks:
         raise RuntimeError(f"PDF에서 텍스트를 추출하지 못했습니다: {PDF_PATH}")
 
-    Chroma.from_documents(
-        documents=chunks,
-        embedding=create_embeddings(),
-        collection_name=COLLECTION_NAME,
-        collection_metadata={"hnsw:space": "cosine"},
-        persist_directory=str(INDEX_PATH),
+    # chromadb는 경로별로 클라이언트를 캐시하므로 매번 새 임시 경로를 쓴다
+    building_path = index_path.with_name(
+        f"{index_path.name}.building-{uuid.uuid4().hex[:8]}"
     )
+    building_path.parent.mkdir(parents=True, exist_ok=True)
 
-    count = index_document_count()
-    if count != len(chunks):
-        raise RuntimeError(
-            f"인덱스 저장이 불완전합니다. 청크 {len(chunks)}개 중 {count}개만 저장됐습니다."
+    try:
+        Chroma.from_documents(
+            documents=chunks,
+            embedding=embeddings,
+            collection_name=COLLECTION_NAME,
+            collection_metadata={"hnsw:space": "cosine"},
+            persist_directory=str(building_path),
         )
+        count = index_document_count(building_path)
+        if count != len(chunks):
+            raise RuntimeError(
+                f"인덱스 저장이 불완전합니다. 청크 {len(chunks)}개 중 {count}개만 저장됐습니다."
+            )
+    except Exception:
+        shutil.rmtree(building_path, ignore_errors=True)
+        raise
+
+    old_path = index_path.with_name(f"{index_path.name}.old")
+    shutil.rmtree(old_path, ignore_errors=True)
+    if index_path.exists():
+        index_path.rename(old_path)
+    building_path.rename(index_path)
+    shutil.rmtree(old_path, ignore_errors=True)
+    # 같은 프로세스에서 이전 경로를 열었던 클라이언트가 옮겨진 DB를 계속 보지 않도록 캐시를 비운다
+    SharedSystemClient.clear_system_cache()
     return count
 
 
@@ -108,7 +169,7 @@ class RAGService:
         vector_store: Any,
         llm: Any,
         *,
-        min_relevance: float = 0.35,
+        min_relevance: float = DEFAULT_MIN_RELEVANCE,
     ) -> None:
         self.vector_store = vector_store
         self.llm = llm
@@ -136,7 +197,9 @@ class RAGService:
         return cls(
             vector_store,
             llm,
-            min_relevance=float(os.getenv("RAG_MIN_RELEVANCE", "0.60")),
+            min_relevance=float(
+                os.getenv("RAG_MIN_RELEVANCE", str(DEFAULT_MIN_RELEVANCE))
+            ),
         )
 
     def retrieve(self, question: str, top_k: int) -> list[tuple[Document, float]]:
@@ -148,6 +211,17 @@ class RAGService:
         return [(document, float(score)) for document, score in matches]
 
     def ask(self, question: str, top_k: int = 4) -> AskResponse:
+        try:
+            return self._ask(question, top_k)
+        except GoogleGenerativeAIError as error:
+            # 질문 임베딩(검색)과 답변 생성 어느 단계의 한도 초과든 429로 올린다
+            if _is_rate_limited(error):
+                raise UpstreamRateLimited(
+                    "Gemini API 호출 한도를 초과했습니다. 잠시 후 다시 시도해 주세요."
+                ) from error
+            raise
+
+    def _ask(self, question: str, top_k: int) -> AskResponse:
         matches = [
             (document, score)
             for document, score in self.retrieve(question, top_k)
@@ -168,7 +242,8 @@ class RAGService:
             {page for page in result.cited_pages if page in retrieved_pages}
         )
 
-        if not result.has_evidence:
+        # 모델이 근거가 있다고 해도 검색된 페이지를 인용하지 않으면 근거 없음으로 본다
+        if not result.has_evidence or not cited_pages:
             return _no_evidence_response()
 
         sources = [
@@ -192,13 +267,19 @@ class RAGService:
         chain = PROMPT | self.llm | OUTPUT_PARSER
         try:
             return chain.invoke({"question": question, "context": context})
-        except OutputParserException as error:
-            # JSON 형식이 깨진 경우: 원문을 답변으로 쓰되 근거 없음 문구가 있으면 차단
-            raw = str(error.llm_output or "").strip()
-            return GroundedAnswer(
-                answer=raw or NO_EVIDENCE_ANSWER,
-                has_evidence=bool(raw) and "근거를 찾지 못했습니다" not in raw,
-            )
+        except OutputParserException:
+            # 형식을 어긴 답변은 검증할 수 없으므로 근거 없음으로 처리한다 (fail-closed)
+            return GroundedAnswer(answer=NO_EVIDENCE_ANSWER, has_evidence=False)
+
+
+def _is_rate_limited(error: GoogleGenerativeAIError) -> bool:
+    """chat 모델은 GoogleRateLimitError를, 임베딩은 ClientError(429)를 감싼 일반 오류를 낸다."""
+    if isinstance(error, GoogleRateLimitError):
+        return True
+    cause = error.__cause__
+    if isinstance(cause, ClientError) and cause.code == 429:
+        return True
+    return "RESOURCE_EXHAUSTED" in str(error) or "429" in str(error)
 
 
 def _no_evidence_response() -> AskResponse:
