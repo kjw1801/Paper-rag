@@ -11,20 +11,18 @@ class Clock:
         return self.value
 
 
-def test_limits_each_client_per_minute() -> None:
+def test_limits_all_clients_globally_per_minute() -> None:
     clock = Clock()
     guard = RequestGuard(per_minute=2, daily_limit=10, max_concurrent=1, clock=clock)
 
     guard.admit("client-a")
     guard.admit("client-a")
-    guard.admit("client-b")
-
     with pytest.raises(RequestLimitExceeded) as caught:
-        guard.admit("client-a")
+        guard.admit("client-b")
 
     assert caught.value.retry_after == 60
     clock.value += 60
-    guard.admit("client-a")
+    guard.admit("client-b")
 
 
 def test_limits_total_requests_per_utc_day() -> None:

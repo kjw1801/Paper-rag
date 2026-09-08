@@ -13,6 +13,7 @@ from backend.service import (
     NO_EVIDENCE_ANSWER,
     RAGService,
     UpstreamRateLimited,
+    UpstreamUnavailable,
     best_sentence,
 )
 
@@ -171,7 +172,7 @@ def test_rate_limit_during_generation_becomes_upstream_error() -> None:
         service.ask("질문")
 
 
-def test_other_google_errors_are_not_masked_as_rate_limits() -> None:
+def test_other_google_errors_are_mapped_to_safe_upstream_error() -> None:
     class BrokenVectorStore:
         def similarity_search_with_relevance_scores(
             self, _q: str, *, k: int
@@ -180,5 +181,5 @@ def test_other_google_errors_are_not_masked_as_rate_limits() -> None:
 
     service = RAGService(BrokenVectorStore(), FakeListChatModel(responses=[]))
 
-    with pytest.raises(GoogleGenerativeAIError):
+    with pytest.raises(UpstreamUnavailable, match="일시적으로"):
         service.ask("질문")

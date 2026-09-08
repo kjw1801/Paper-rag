@@ -30,6 +30,8 @@
 - 청크 안에서 질문과 가장 겹치는 문장을 근거 문장으로 반환하고, UI에서 PDF 해당 페이지로 링크
 - FastAPI `POST /ask`
 - React 질문·답변·출처 확인 화면
+- Cloudflare Turnstile 서버 검증과 전역 요청량·동시 호출 제한
+- 무료 API 한도와 일시 장애를 구분하는 HTTP 상태·오류 코드 표시
 
 ## 구조
 
@@ -48,9 +50,11 @@ PDF
 ```text
 backend/
   api.py        FastAPI 엔드포인트와 CORS 설정
+  guard.py      전역 분당·일일 요청량과 동시 호출 제한
   ingest.py     PDF 페이지 추출과 청크 분할
   models.py     요청·응답 스키마
   service.py    인덱스 생성·검증, Chroma 검색, Gemini 구조화 답변
+  turnstile.py  Cloudflare Turnstile 토큰 검증
 data/
   paper.pdf     검색 대상 논문
 scripts/
@@ -69,13 +73,14 @@ uv sync
 cp .env.example .env
 ```
 
-`.env`에 본인의 Gemini API 키를 입력합니다. API 키는 React 코드가 아니라 FastAPI 서버에서만 읽으며 `.env`는 Git에서 제외됩니다.
+`.env`에 본인의 Gemini API 키를 입력합니다. API 키는 React 코드가 아니라 FastAPI 서버에서만 읽으며 `.env`는 Git에서 제외됩니다. 공개 배포는 Turnstile을 기본 필수로 처리하며, 로컬 개발에서만 `TURNSTILE_REQUIRED=0`으로 명시적으로 끕니다.
 
 ```dotenv
 GOOGLE_API_KEY=your_key_here
 GEMINI_CHAT_MODEL=gemini-3.6-flash
 GEMINI_EMBEDDING_MODEL=models/gemini-embedding-001
 RAG_MIN_RELEVANCE=0.60
+TURNSTILE_REQUIRED=0
 ```
 
 ## 실행
@@ -103,6 +108,8 @@ cd web
 npm install
 npm run dev
 ```
+
+프런트 환경변수는 `web/.env.example`을 참고합니다.
 
 - React: http://localhost:3000
 - FastAPI 문서: http://127.0.0.1:8000/docs
@@ -169,7 +176,7 @@ uv run python scripts/evaluate.py --json data/evaluation.json
 
 임계값 `RAG_MIN_RELEVANCE`는 논문 내 질문의 최고 점수 최솟값과 범위 밖 질문의 최고 점수 최댓값 사이에 둡니다. 두 구간이 겹치면 임계값은 논문 내 질문을 놓치지 않는 값으로 두고 모델의 `has_evidence` 판정이 차단을 담당합니다.
 
-Gemini 무료 티어는 모델별 일일 요청 수 제한이 있습니다(2026-09 기준 `gemini-3.6-flash` 20회/일). 평가 14개 질문만으로 절반 이상을 쓰므로 하루에 한 번만 실행하고, 한도에 걸린 질문은 `ERR`로 기록됩니다. `--delay`는 분당 한도를 피할 뿐 일일 한도는 해결하지 못합니다. 서버는 검색 임베딩과 답변 생성 어느 단계에서든 한도에 걸리면 HTTP 429를 반환합니다.
+Gemini 무료 티어의 요청 한도는 모델과 계정 상태에 따라 달라질 수 있습니다. 평가 14개 질문은 호출량을 많이 사용하므로 반복 실행을 피하고, 한도에 걸린 질문은 `ERR`로 기록합니다. `--delay`는 분당 한도를 완화할 뿐 일일 한도는 해결하지 못합니다. 서버는 검색 임베딩과 답변 생성 어느 단계에서든 한도에 걸리면 `AI_RATE_LIMITED`와 HTTP 429를 반환합니다.
 
 단위 테스트는 외부 API를 호출하지 않고 페이지 metadata 보존, 근거 문장 선택, 구조화 답변 파싱과 grounded 판정, 인용 페이지 강제, 빈 인덱스 감지, 안전한 재생성, API 응답 구조를 검증합니다.
 
@@ -191,14 +198,20 @@ uv run pytest
 | `RAG_RATE_LIMIT_PER_MINUTE` | 같은 IP가 1분 동안 보낼 수 있는 질문 수 (기본 5) |
 | `RAG_DAILY_REQUEST_LIMIT` | 인스턴스가 UTC 하루 동안 처리할 질문 수 (기본 50) |
 | `RAG_MAX_CONCURRENT_REQUESTS` | 동시에 실행할 Gemini 요청 수 (기본 2) |
+| `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile 비밀 키. 백엔드에서만 관리 |
+| `TURNSTILE_REQUIRED=1` | 공개 배포에서 토큰 검증을 필수화 |
+| `TURNSTILE_EXPECTED_HOSTNAMES` | `paper.woojulab.com` 등 허용 호스트 |
+| `TURNSTILE_EXPECTED_ACTION` | 프런트와 동일한 `paper_ask` 사용 |
 | `HOST=0.0.0.0`, `PORT` | 배포 플랫폼이 요구하는 바인딩 주소와 포트 |
 | `RAG_RELOAD=0` | 자동 리로드 끄기 |
 
-React 쪽은 `NEXT_PUBLIC_API_URL`에 백엔드 배포 주소를 넣습니다. 인덱스 재생성은 임시 디렉터리에 만든 뒤 교체하므로 실패해도 기존 인덱스가 유지됩니다.
+React 쪽은 `NEXT_PUBLIC_API_URL`에 백엔드 배포 주소를, `NEXT_PUBLIC_TURNSTILE_SITE_KEY`에 공개 사이트 키를 넣습니다. 인덱스 재생성은 임시 디렉터리에 만든 뒤 교체하므로 실패해도 기존 인덱스가 유지됩니다.
 
 ### 공개 데모 보호
 
-`/ask`는 IP별 분당 요청 수, 인스턴스 전체의 일일 요청 수와 동시 모델 호출 수를 제한합니다. 제한을 넘으면 `Retry-After` 헤더와 함께 HTTP 429를 반환합니다. 질문 본문은 최대 500자로 제한합니다. 현재 Cloud Run은 최대 인스턴스 1개로 운영하므로 이 메모리 기반 제한이 1차 비용 방어 역할을 하지만, 인스턴스가 재시작되면 카운터가 초기화됩니다. 맞춤 도메인을 연결한 뒤에는 Cloudflare Turnstile의 서버 검증을 추가해 자동화된 접근을 한 번 더 차단할 예정입니다.
+`/ask`는 Cloudflare Turnstile 검증을 먼저 통과해야 하며, 인스턴스 전체의 분당·일일 요청 수와 동시 모델 호출 수를 제한합니다. 호출자가 조작할 수 있는 `X-Forwarded-For` 값에는 의존하지 않습니다. 제한을 넘으면 `Retry-After`와 `DEMO_RATE_LIMITED` 코드가 포함된 HTTP 429를 반환합니다. 질문 본문은 최대 500자로 제한합니다.
+
+메모리 기반 일일 카운터는 Cloud Run 인스턴스가 재시작되면 초기화되는 보조 장치입니다. 실제 비용 상한은 Google Cloud/Gemini 프로젝트의 결제 설정과 API 할당량으로 별도 관리해야 합니다.
 
 ## 한계
 
@@ -207,4 +220,4 @@ React 쪽은 `NEXT_PUBLIC_API_URL`에 백엔드 배포 주소를 넣습니다. �
 - 평가 질문에서 논문 내 최고 점수는 `0.683~0.774`, 범위 밖 질문은 `0.502~0.667`이었습니다. 현재 임계값 `0.60`은 관련 질문의 재현율을 보존하는 1차 필터이며, 경계에 걸친 질문은 모델의 `has_evidence`가 2차로 차단합니다.
 - 근거 문장은 질문과 글자 2-gram이 가장 많이 겹치는 문장을 고르는 단순 방식입니다.
 - 답변 품질은 Gemini 모델과 검색된 청크에 영향을 받습니다.
-- 무료 티어(`gemini-3.5-flash-lite` 등)로도 답변은 정상 생성되지만, 모델별 일일 요청 한도가 작아 공개 서비스에는 유료 결제 계정을 권장합니다.
+- 개인 프로젝트이며 무료 AI API 플랜으로 운영하므로 사용량에 따라 답변이 느리거나 일시 중단될 수 있습니다. 화면의 HTTP 상태와 오류 코드로 한도 소진과 일시 장애를 구분합니다.

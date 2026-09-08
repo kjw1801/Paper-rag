@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 class AskRequest(BaseModel):
     question: str = Field(min_length=2, max_length=500)
     top_k: int = Field(default=4, ge=1, le=8)
+    turnstile_token: str | None = Field(default=None, min_length=1, max_length=2048)
 
 
 class Source(BaseModel):
@@ -25,6 +26,7 @@ class HealthResponse(BaseModel):
     api_key_configured: bool
     index_ready: bool
     document_count: int
+    turnstile_enabled: bool
 
 
 class GroundedAnswer(BaseModel):

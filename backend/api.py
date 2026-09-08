@@ -13,10 +13,12 @@ from backend.models import AskRequest, AskResponse, HealthResponse
 from backend.service import (
     RAGService,
     UpstreamRateLimited,
+    UpstreamUnavailable,
     api_key_configured,
     build_index,
     index_document_count,
 )
+from backend.turnstile import TurnstileRejected, TurnstileUnavailable, TurnstileVerifier
 
 DEFAULT_ORIGINS = ["http://localhost:3000", "http://127.0.0.1:3000"]
 
@@ -64,7 +66,13 @@ def get_service() -> RAGService:
     try:
         return RAGService.from_environment()
     except RuntimeError as error:
-        raise HTTPException(status_code=503, detail=str(error)) from error
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "SERVICE_NOT_READY",
+                "message": "논문 검색 서비스를 준비 중입니다.",
+            },
+        ) from error
 
 
 ServiceDependency = Annotated[RAGService, Depends(get_service)]
@@ -78,6 +86,14 @@ def get_request_guard() -> RequestGuard:
 GuardDependency = Annotated[RequestGuard, Depends(get_request_guard)]
 
 
+@lru_cache(maxsize=1)
+def get_turnstile_verifier() -> TurnstileVerifier:
+    return TurnstileVerifier.from_environment()
+
+
+TurnstileDependency = Annotated[TurnstileVerifier, Depends(get_turnstile_verifier)]
+
+
 @app.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
     count = index_document_count()
@@ -86,6 +102,7 @@ def health() -> HealthResponse:
         api_key_configured=api_key_configured(),
         index_ready=count > 0,
         document_count=count,
+        turnstile_enabled=get_turnstile_verifier().enabled,
     )
 
 
@@ -95,26 +112,51 @@ def ask(
     request: Request,
     service: ServiceDependency,
     guard: GuardDependency,
+    turnstile: TurnstileDependency,
 ) -> AskResponse:
-    forwarded_for = request.headers.get("x-forwarded-for", "")
-    client_id = forwarded_for.split(",", maxsplit=1)[0].strip()
-    if not client_id:
-        client_id = request.client.host if request.client else "unknown"
+    # X-Forwarded-For is caller-controlled unless every proxy hop is trusted.
+    client_id = request.client.host if request.client else "unknown"
 
     try:
+        turnstile.verify(payload.turnstile_token, client_id)
         guard.admit(client_id)
         with guard.concurrency_slot():
             return service.ask(payload.question, payload.top_k)
     except RequestLimitExceeded as error:
         raise HTTPException(
             status_code=429,
-            detail=str(error),
+            detail={"code": "DEMO_RATE_LIMITED", "message": str(error)},
             headers={"Retry-After": str(error.retry_after)},
         ) from error
     except UpstreamRateLimited as error:
-        raise HTTPException(status_code=429, detail=str(error)) from error
+        raise HTTPException(
+            status_code=429,
+            detail={"code": "AI_RATE_LIMITED", "message": str(error)},
+            headers={"Retry-After": "3600"},
+        ) from error
+    except UpstreamUnavailable as error:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "AI_SERVICE_UNAVAILABLE", "message": str(error)},
+        ) from error
+    except TurnstileRejected as error:
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "TURNSTILE_REJECTED", "message": str(error)},
+        ) from error
+    except TurnstileUnavailable as error:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "TURNSTILE_UNAVAILABLE", "message": str(error)},
+        ) from error
     except RuntimeError as error:
-        raise HTTPException(status_code=503, detail=str(error)) from error
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "SERVICE_UNAVAILABLE",
+                "message": "논문 검색 서비스가 일시적으로 응답하지 않습니다.",
+            },
+        ) from error
 
 
 def run() -> None:

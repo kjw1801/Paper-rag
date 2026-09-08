@@ -1,9 +1,21 @@
-from backend.guard import RequestGuard
+import pytest
 from fastapi.testclient import TestClient
 
-from backend.api import app, get_request_guard, get_service
+from backend.api import app, get_request_guard, get_service, get_turnstile_verifier
+from backend.guard import RequestGuard
 from backend.models import AskResponse, Source
 from backend.service import UpstreamRateLimited
+from backend.turnstile import TurnstileVerifier
+
+
+@pytest.fixture(autouse=True)
+def disable_turnstile_for_api_tests():
+    app.dependency_overrides[get_turnstile_verifier] = lambda: TurnstileVerifier(
+        secret_key=None,
+        required=False,
+    )
+    yield
+    app.dependency_overrides.clear()
 
 
 class StubService:
@@ -61,7 +73,8 @@ def test_upstream_rate_limit_becomes_429() -> None:
         app.dependency_overrides.clear()
 
     assert response.status_code == 429
-    assert "한도" in response.json()["detail"]
+    assert response.json()["detail"]["code"] == "AI_RATE_LIMITED"
+    assert "한도" in response.json()["detail"]["message"]
 
 
 def test_request_guard_becomes_429_with_retry_after() -> None:
@@ -87,3 +100,4 @@ def test_request_guard_becomes_429_with_retry_after() -> None:
     assert first.status_code == 200
     assert second.status_code == 429
     assert second.headers["retry-after"] == "60"
+    assert second.json()["detail"]["code"] == "DEMO_RATE_LIMITED"

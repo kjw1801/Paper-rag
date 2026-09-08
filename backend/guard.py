@@ -44,6 +44,7 @@ class RequestGuard:
         self._lock = threading.Lock()
         self._slots = threading.BoundedSemaphore(max_concurrent)
         self._requests: dict[str, deque[float]] = defaultdict(deque)
+        self._global_requests: deque[float] = deque()
         self._day = self._utc_day(clock())
         self._daily_count = 0
 
@@ -67,6 +68,7 @@ class RequestGuard:
                 self._day = today
                 self._daily_count = 0
                 self._requests.clear()
+                self._global_requests.clear()
 
             if self._daily_count >= self.daily_limit:
                 tomorrow = datetime.combine(
@@ -78,6 +80,13 @@ class RequestGuard:
                 )
 
             window_start = now - 60
+            while self._global_requests and self._global_requests[0] <= window_start:
+                self._global_requests.popleft()
+            if len(self._global_requests) >= self.per_minute:
+                raise RequestLimitExceeded(
+                    "공개 데모의 분당 질문 한도를 사용했습니다. 잠시 후 다시 시도해 주세요.",
+                    retry_after=math.ceil(self._global_requests[0] + 60 - now),
+                )
             requests = self._requests[client_id]
             while requests and requests[0] <= window_start:
                 requests.popleft()
@@ -88,6 +97,7 @@ class RequestGuard:
                 )
 
             requests.append(now)
+            self._global_requests.append(now)
             self._daily_count += 1
 
     @contextmanager

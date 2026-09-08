@@ -49,6 +49,10 @@ class UpstreamRateLimited(RuntimeError):
     """Gemini 호출 한도(무료 티어 분당·일당 요청 수)를 넘었을 때."""
 
 
+class UpstreamUnavailable(RuntimeError):
+    """Gemini가 요청을 처리하지 못했을 때 외부에 안전하게 전달하는 오류."""
+
+
 PROMPT = ChatPromptTemplate.from_messages(
     [
         (
@@ -217,9 +221,11 @@ class RAGService:
             # 질문 임베딩(검색)과 답변 생성 어느 단계의 한도 초과든 429로 올린다
             if _is_rate_limited(error):
                 raise UpstreamRateLimited(
-                    "Gemini API 호출 한도를 초과했습니다. 잠시 후 다시 시도해 주세요."
+                    "무료 AI API의 현재 사용량 한도에 도달했습니다. 한도가 초기화된 뒤 다시 시도해 주세요."
                 ) from error
-            raise
+            raise UpstreamUnavailable(
+                "AI 답변 서비스가 일시적으로 응답하지 않습니다. 잠시 후 다시 시도해 주세요."
+            ) from error
 
     def _ask(self, question: str, top_k: int) -> AskResponse:
         matches = [

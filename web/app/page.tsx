@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ArrowUpRight,
   BookOpen,
@@ -37,6 +37,34 @@ type AskResponse = {
   cited_pages: number[];
 };
 
+type ErrorState = {
+  message: string;
+  code: string;
+  status?: number;
+};
+
+type TurnstileApi = {
+  render: (
+    container: HTMLElement,
+    options: {
+      sitekey: string;
+      action: string;
+      theme: 'auto';
+      size: 'flexible';
+      appearance: 'interaction-only';
+      callback: (token: string) => void;
+      'expired-callback': () => void;
+      'error-callback': () => void;
+    },
+  ) => string;
+  reset: (widgetId: string) => void;
+  remove: (widgetId: string) => void;
+};
+
+function getTurnstile(): TurnstileApi | undefined {
+  return (window as Window & { turnstile?: TurnstileApi }).turnstile;
+}
+
 const suggestions = [
   '이 논문이 해결하려는 문제는 무엇인가요?',
   '그룹 추천은 어떤 단계로 구성되나요?',
@@ -57,41 +85,127 @@ const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://127.0.0.1:8000';
 export default function Home() {
   const [question, setQuestion] = useState(suggestions[0]);
   const [result, setResult] = useState<AskResponse | null>(null);
-  const [error, setError] = useState('');
+  const [error, setError] = useState<ErrorState | null>(null);
   const [loading, setLoading] = useState(false);
+  const [turnstileReady, setTurnstileReady] = useState(false);
+  const [turnstileError, setTurnstileError] = useState(false);
+  const turnstileContainerRef = useRef<HTMLDivElement>(null);
+  const turnstileTokenRef = useRef('');
+  const turnstileWidgetIdRef = useRef<string | null>(null);
+  const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? '';
+
+  useEffect(() => {
+    if (!turnstileSiteKey) return;
+
+    const renderWidget = () => {
+      const turnstile = getTurnstile();
+      const container = turnstileContainerRef.current;
+      if (!turnstile || !container || turnstileWidgetIdRef.current) return;
+      turnstileWidgetIdRef.current = turnstile.render(container, {
+        sitekey: turnstileSiteKey,
+        action: 'paper_ask',
+        theme: 'auto',
+        size: 'flexible',
+        appearance: 'interaction-only',
+        callback: (token) => {
+          turnstileTokenRef.current = token;
+          setTurnstileReady(true);
+          setTurnstileError(false);
+        },
+        'expired-callback': () => {
+          turnstileTokenRef.current = '';
+          setTurnstileReady(false);
+        },
+        'error-callback': () => {
+          turnstileTokenRef.current = '';
+          setTurnstileReady(false);
+          setTurnstileError(true);
+        },
+      });
+    };
+
+    const scriptId = 'cloudflare-turnstile-script';
+    let script = document.getElementById(scriptId) as HTMLScriptElement | null;
+    if (script) {
+      if (getTurnstile()) renderWidget();
+      else script.addEventListener('load', renderWidget);
+    } else {
+      script = document.createElement('script');
+      script.id = scriptId;
+      script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+      script.async = true;
+      script.defer = true;
+      script.addEventListener('load', renderWidget);
+      document.head.appendChild(script);
+    }
+
+    return () => {
+      script?.removeEventListener('load', renderWidget);
+      const turnstile = getTurnstile();
+      if (turnstile && turnstileWidgetIdRef.current) turnstile.remove(turnstileWidgetIdRef.current);
+      turnstileWidgetIdRef.current = null;
+    };
+  }, [turnstileSiteKey]);
 
   async function ask(event?: { preventDefault(): void }) {
     event?.preventDefault();
     if (!question.trim() || loading) return;
 
     setLoading(true);
-    setError('');
+    setError(null);
+    setResult(null);
+
+    const turnstileToken = turnstileTokenRef.current;
+    if (turnstileSiteKey && !turnstileToken) {
+      setError({ message: '보안 확인을 완료한 뒤 질문해 주세요.', code: 'TURNSTILE_REQUIRED' });
+      setLoading(false);
+      return;
+    }
 
     try {
       const response = await fetch(`${apiUrl}/ask`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question: question.trim(), top_k: 4 }),
+        body: JSON.stringify({ question: question.trim(), top_k: 4, turnstile_token: turnstileToken || undefined }),
       });
 
       if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as { detail?: string } | null;
-        throw new Error(body?.detail ?? '답변 서버에 연결할 수 없습니다.');
+        const body = (await response.json().catch(() => null)) as {
+          detail?: string | { code?: string; message?: string };
+        } | null;
+        const detail = body?.detail;
+        const message = typeof detail === 'string' ? detail : detail?.message ?? '답변 서버에 연결할 수 없습니다.';
+        const code = typeof detail === 'object' && detail?.code
+          ? detail.code
+          : response.status === 429
+            ? 'DEMO_RATE_LIMITED'
+            : `HTTP_${response.status}`;
+        setError({ message, code, status: response.status });
+        return;
       }
 
       setResult((await response.json()) as AskResponse);
     } catch (caught) {
       setResult(null);
-      setError(caught instanceof Error ? caught.message : '질문 처리 중 오류가 발생했습니다.');
+      setError({
+        message: caught instanceof Error ? caught.message : '질문 처리 중 오류가 발생했습니다.',
+        code: 'CLIENT_ERROR',
+      });
     } finally {
       setLoading(false);
+      if (turnstileSiteKey) {
+        turnstileTokenRef.current = '';
+        setTurnstileReady(false);
+        const turnstile = getTurnstile();
+        if (turnstile && turnstileWidgetIdRef.current) turnstile.reset(turnstileWidgetIdRef.current);
+      }
     }
   }
 
   function selectSuggestion(suggestion: string) {
     setQuestion(suggestion);
     setResult(null);
-    setError('');
+    setError(null);
   }
 
   return (
@@ -140,11 +254,14 @@ export default function Home() {
                 <div>
                   <CardTitle className="text-xl font-semibold">논문에 질문하기</CardTitle>
                   <CardDescription className="mt-1">검색된 문맥만 사용해 답변합니다.</CardDescription>
+                  <p className="mt-2 max-w-lg text-xs leading-5 text-slate-500">
+                    개인 프로젝트이며 무료 AI API 플랜으로 운영됩니다. 사용량에 따라 답변이 느리거나 일시 중단될 수 있습니다.
+                  </p>
                 </div>
               </div>
             </CardHeader>
             <CardContent className="p-6 sm:p-8">
-              <form onSubmit={ask} className="flex gap-2">
+              <form onSubmit={ask} className="flex flex-col gap-2 sm:flex-row">
                 <Input
                   value={question}
                   onChange={(event) => setQuestion(event.target.value)}
@@ -154,8 +271,8 @@ export default function Home() {
                 />
                 <Button
                   type="submit"
-                  disabled={loading || !question.trim()}
-                  className="h-12 rounded-xl bg-slate-950 px-5 text-white hover:bg-slate-800"
+                  disabled={loading || !question.trim() || Boolean(turnstileSiteKey && !turnstileReady)}
+                  className="h-12 w-full rounded-xl bg-slate-950 px-5 text-white hover:bg-slate-800 sm:w-auto"
                 >
                   {loading ? <LoaderCircle className="animate-spin" /> : '질문'}
                 </Button>
@@ -176,6 +293,17 @@ export default function Home() {
                 ))}
               </div>
 
+              {turnstileSiteKey && (
+                <div className="mt-4 min-h-8">
+                  <div ref={turnstileContainerRef} />
+                  {turnstileError && (
+                    <p className="mt-2 text-xs text-orange-700">
+                      보안 확인을 불러오지 못했습니다. 페이지를 새로고침해 주세요.
+                    </p>
+                  )}
+                </div>
+              )}
+
               <div className="mt-8 min-h-[300px] rounded-2xl border border-slate-200 bg-slate-50 p-5 sm:p-7">
                 {loading && (
                   <div className="flex h-[240px] flex-col items-center justify-center text-slate-500">
@@ -188,7 +316,10 @@ export default function Home() {
                   <div className="flex h-[240px] flex-col items-center justify-center text-center">
                     <Bot className="mb-3 size-8 text-orange-500" />
                     <p className="font-medium text-slate-800">답변을 불러오지 못했습니다.</p>
-                    <p className="mt-2 max-w-md text-sm leading-6 text-slate-500">{error}</p>
+                    <p className="mt-2 font-mono text-xs text-orange-700">
+                      {error.code}{error.status ? ` · HTTP ${error.status}` : ''}
+                    </p>
+                    <p className="mt-2 max-w-md text-sm leading-6 text-slate-500">{error.message}</p>
                   </div>
                 )}
 
@@ -218,7 +349,7 @@ export default function Home() {
                         </a>
                       ))}
                     </div>
-                    <p className="text-lg leading-8 text-slate-700">{result.answer}</p>
+                    <p className="whitespace-pre-line text-lg leading-8 text-slate-700">{result.answer}</p>
                     {result.sources.length > 0 && (
                       <div className="mt-7 space-y-3 border-t border-slate-200 pt-5">
                         <p className="text-sm font-semibold text-slate-900">검색 근거 <span className="font-normal text-slate-500">· 페이지를 누르면 PDF 해당 페이지가 열립니다</span></p>

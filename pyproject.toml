@@ -1,5 +1,5 @@
 [project]
-name = "langchain-study"
+name = "paper-rag"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
@@ -28,4 +28,4 @@ testpaths = ["tests"]
 venvPath = "."
 venv = ".venv"
 include = ["backend", "scripts", "tests", "main.py"]
-exclude = ["Paper-rag", "web/node_modules", "web/dist"]
+exclude = ["web/node_modules", "web/dist"]
