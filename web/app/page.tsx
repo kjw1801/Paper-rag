@@ -113,7 +113,7 @@ export default function Home() {
             <Badge variant="outline" className="h-7 border-slate-300 bg-white px-3 text-slate-600">PDF 7 PAGES</Badge>
           </div>
           <h1 className="text-balance text-4xl font-semibold leading-[1.12] tracking-[-0.045em] sm:text-6xl">
-            내 논문에 질문하고,
+            연구 논문에 질문하고,
             <span className="text-cyan-700"> 페이지 근거까지 확인하세요.</span>
           </h1>
           <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-600">

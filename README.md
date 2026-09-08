@@ -182,10 +182,17 @@ uv run pytest
 | `CORS_ALLOWED_ORIGINS` | React 배포 주소를 쉼표로 구분해 추가 (기본값은 localhost:3000만 허용) |
 | `RAG_INDEX_DIR` | Chroma 인덱스 경로. `data/chroma/`는 Git에 포함되지 않으므로 영구 디스크 경로를 지정 |
 | `RAG_BUILD_INDEX_ON_STARTUP=1` | 인덱스가 없으면 서버 시작 시 한 번 생성 (임베딩 호출 발생). 파일 잠금으로 중복 생성을 막지만 worker 1개로 시작하는 것을 권장 |
+| `RAG_RATE_LIMIT_PER_MINUTE` | 같은 IP가 1분 동안 보낼 수 있는 질문 수 (기본 5) |
+| `RAG_DAILY_REQUEST_LIMIT` | 인스턴스가 UTC 하루 동안 처리할 질문 수 (기본 50) |
+| `RAG_MAX_CONCURRENT_REQUESTS` | 동시에 실행할 Gemini 요청 수 (기본 2) |
 | `HOST=0.0.0.0`, `PORT` | 배포 플랫폼이 요구하는 바인딩 주소와 포트 |
 | `RAG_RELOAD=0` | 자동 리로드 끄기 |
 
 React 쪽은 `NEXT_PUBLIC_API_URL`에 백엔드 배포 주소를 넣습니다. 인덱스 재생성은 임시 디렉터리에 만든 뒤 교체하므로 실패해도 기존 인덱스가 유지됩니다.
+
+### 공개 데모 보호
+
+`/ask`는 IP별 분당 요청 수, 인스턴스 전체의 일일 요청 수와 동시 모델 호출 수를 제한합니다. 제한을 넘으면 `Retry-After` 헤더와 함께 HTTP 429를 반환합니다. 질문 본문은 최대 500자로 제한합니다. 현재 Cloud Run은 최대 인스턴스 1개로 운영하므로 이 메모리 기반 제한이 1차 비용 방어 역할을 하지만, 인스턴스가 재시작되면 카운터가 초기화됩니다. 맞춤 도메인을 연결한 뒤에는 Cloudflare Turnstile의 서버 검증을 추가해 자동화된 접근을 한 번 더 차단할 예정입니다.
 
 ## 한계
 

@@ -1,6 +1,7 @@
+from backend.guard import RequestGuard
 from fastapi.testclient import TestClient
 
-from backend.api import app, get_service
+from backend.api import app, get_request_guard, get_service
 from backend.models import AskResponse, Source
 from backend.service import UpstreamRateLimited
 
@@ -61,3 +62,28 @@ def test_upstream_rate_limit_becomes_429() -> None:
 
     assert response.status_code == 429
     assert "한도" in response.json()["detail"]
+
+
+def test_request_guard_becomes_429_with_retry_after() -> None:
+    guard = RequestGuard(per_minute=1, daily_limit=10, max_concurrent=1)
+    app.dependency_overrides[get_service] = lambda: StubService()
+    app.dependency_overrides[get_request_guard] = lambda: guard
+
+    try:
+        with TestClient(app) as client:
+            first = client.post(
+                "/ask",
+                json={"question": "첫 번째 질문입니다"},
+                headers={"x-forwarded-for": "203.0.113.10"},
+            )
+            second = client.post(
+                "/ask",
+                json={"question": "두 번째 질문입니다"},
+                headers={"x-forwarded-for": "203.0.113.10"},
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert first.status_code == 200
+    assert second.status_code == 429
+    assert second.headers["retry-after"] == "60"

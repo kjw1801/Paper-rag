@@ -5,9 +5,10 @@ from functools import lru_cache
 from typing import Annotated
 
 import uvicorn
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 
+from backend.guard import RequestGuard, RequestLimitExceeded
 from backend.models import AskRequest, AskResponse, HealthResponse
 from backend.service import (
     RAGService,
@@ -69,6 +70,14 @@ def get_service() -> RAGService:
 ServiceDependency = Annotated[RAGService, Depends(get_service)]
 
 
+@lru_cache(maxsize=1)
+def get_request_guard() -> RequestGuard:
+    return RequestGuard.from_environment()
+
+
+GuardDependency = Annotated[RequestGuard, Depends(get_request_guard)]
+
+
 @app.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
     count = index_document_count()
@@ -81,9 +90,27 @@ def health() -> HealthResponse:
 
 
 @app.post("/ask", response_model=AskResponse)
-def ask(payload: AskRequest, service: ServiceDependency) -> AskResponse:
+def ask(
+    payload: AskRequest,
+    request: Request,
+    service: ServiceDependency,
+    guard: GuardDependency,
+) -> AskResponse:
+    forwarded_for = request.headers.get("x-forwarded-for", "")
+    client_id = forwarded_for.split(",", maxsplit=1)[0].strip()
+    if not client_id:
+        client_id = request.client.host if request.client else "unknown"
+
     try:
-        return service.ask(payload.question, payload.top_k)
+        guard.admit(client_id)
+        with guard.concurrency_slot():
+            return service.ask(payload.question, payload.top_k)
+    except RequestLimitExceeded as error:
+        raise HTTPException(
+            status_code=429,
+            detail=str(error),
+            headers={"Retry-After": str(error.retry_after)},
+        ) from error
     except UpstreamRateLimited as error:
         raise HTTPException(status_code=429, detail=str(error)) from error
     except RuntimeError as error:
