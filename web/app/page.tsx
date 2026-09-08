@@ -5,6 +5,7 @@ import {
   ArrowUpRight,
   BookOpen,
   Bot,
+  Code2,
   FileText,
   LoaderCircle,
   Search,
@@ -42,6 +43,14 @@ const suggestions = [
   '제안 방법의 F-measure는 얼마인가요?',
   '실험 데이터는 어떻게 수집했나요?',
 ];
+
+const performanceMetrics = [
+  { label: '협업 필터링', value: 0.0977, color: 'bg-slate-400' },
+  { label: '빈발 패턴', value: 0.12366, color: 'bg-cyan-500' },
+  { label: '그룹 추천', value: 0.15435, color: 'bg-cyan-700' },
+];
+
+const performanceScaleMax = 0.16;
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://127.0.0.1:8000';
 
@@ -98,10 +107,10 @@ export default function Home() {
           <a
             href="/paper.pdf"
             target="_blank"
-            rel="noreferrer"
+            rel="noopener noreferrer"
             className="inline-flex h-9 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-4 text-sm font-medium transition hover:bg-slate-100"
           >
-            논문 원문 <ArrowUpRight className="size-4" />
+            논문 PDF 보기 <ArrowUpRight className="size-4" />
           </a>
         </div>
       </header>
@@ -243,6 +252,50 @@ export default function Home() {
           </Card>
 
           <aside className="space-y-5">
+            <Card className="border-0 bg-white ring-slate-200">
+              <CardHeader className="p-6 pb-3">
+                <CardTitle className="text-lg font-semibold">추천 성능 비교</CardTitle>
+                <CardDescription>평균 F-measure · 사용자 248명</CardDescription>
+              </CardHeader>
+              <CardContent className="px-6 pb-6">
+                <figure className="space-y-4">
+                  <figcaption className="sr-only">
+                    협업 필터링 0.0977, 빈발 패턴 0.12366, 그룹 추천 0.15435의 평균 F-measure 비교
+                  </figcaption>
+                  {performanceMetrics.map((metric) => (
+                    <div key={metric.label}>
+                      <div className="mb-1.5 flex items-center justify-between gap-3 text-sm">
+                        <span className="font-medium text-slate-700">{metric.label}</span>
+                        <span className="font-mono text-xs text-slate-500">{metric.value}</span>
+                      </div>
+                      <div className="h-2.5 overflow-hidden rounded-full bg-slate-100">
+                        <div
+                          className={`h-full rounded-full ${metric.color}`}
+                          style={{ width: `${(metric.value / performanceScaleMax) * 100}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                  <div className="flex justify-between border-t border-slate-100 pt-2 font-mono text-[11px] text-slate-400">
+                    <span>0.00</span>
+                    <span>0.08</span>
+                    <span>0.16</span>
+                  </div>
+                </figure>
+                <p className="mt-4 rounded-xl bg-cyan-50 px-3 py-2.5 text-sm leading-5 text-cyan-900">
+                  그룹 추천은 협업 필터링보다 F-measure가 <strong>0.05665</strong> 높았습니다.
+                </p>
+                <a
+                  href="/paper.pdf#page=5"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-cyan-800"
+                >
+                  논문 5페이지 표 1 확인 <ArrowUpRight className="size-3.5" />
+                </a>
+              </CardContent>
+            </Card>
+
             <Card className="border-0 bg-slate-950 text-white ring-0">
               <CardHeader className="p-6 pb-3">
                 <CardTitle className="text-lg font-semibold">처리 흐름</CardTitle>
@@ -274,8 +327,36 @@ export default function Home() {
             </Card>
 
             <div className="rounded-2xl border border-slate-200 bg-white p-5 text-sm leading-6 text-slate-500">
-              <strong className="block text-slate-900">Paper</strong>
-              Personalized Group Recommendation Using Collaborative Filtering and Frequent Pattern
+              <strong className="block text-slate-900">연구 논문</strong>
+              <p className="mt-1">
+                Personalized Group Recommendation Using Collaborative Filtering and Frequent Pattern
+              </p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <a
+                  href="https://www.kci.go.kr/kciportal/ci/sereArticleSearch/ciSereArtiView.kci?sereArticleSearchBean.artiId=ART002130830"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 rounded-full border border-slate-200 px-3 py-1.5 font-medium text-slate-700 transition hover:border-cyan-300 hover:bg-cyan-50 hover:text-cyan-800"
+                >
+                  KCI에서 보기 <ArrowUpRight className="size-3.5" />
+                </a>
+                <a
+                  href="https://www.dbpia.co.kr/journal/articleDetail?nodeId=NODE06747562"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 rounded-full border border-slate-200 px-3 py-1.5 font-medium text-slate-700 transition hover:border-cyan-300 hover:bg-cyan-50 hover:text-cyan-800"
+                >
+                  DBpia에서 보기 <ArrowUpRight className="size-3.5" />
+                </a>
+                <a
+                  href="https://github.com/kjw1801/Paper-rag"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 rounded-full border border-slate-200 px-3 py-1.5 font-medium text-slate-700 transition hover:border-cyan-300 hover:bg-cyan-50 hover:text-cyan-800"
+                >
+                  <Code2 className="size-3.5" /> GitHub 코드 보기
+                </a>
+              </div>
             </div>
           </aside>
         </div>
