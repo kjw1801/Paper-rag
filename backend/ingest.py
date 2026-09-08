@@ -5,11 +5,22 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from pypdf import PdfReader
 
 
+def clean_extracted_text(text: str) -> str:
+    """검색에 불필요한 저자 소속·연락처 각주를 제거한다."""
+    author_markers = ("first author", "corresponding author")
+    lines = [
+        line
+        for line in text.splitlines()
+        if not any(marker in line.lower() for marker in author_markers)
+    ]
+    return "\n".join(lines)
+
+
 def load_pdf_pages(pdf_path: Path) -> list[Document]:
     reader = PdfReader(str(pdf_path))
     pages = [
         Document(
-            page_content=pdf_page.extract_text() or "",
+            page_content=clean_extracted_text(pdf_page.extract_text() or ""),
             metadata={"page": page_number, "source": pdf_path.name},
         )
         for page_number, pdf_page in enumerate(reader.pages, start=1)
