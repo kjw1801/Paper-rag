@@ -1,0 +1,11 @@
+.venv/
+.env
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.pyright/
+tmp/
+data/chroma/
+web/node_modules/
+web/dist/
+.DS_Store
