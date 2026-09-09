@@ -5,7 +5,7 @@ from functools import lru_cache
 from typing import Annotated
 
 import uvicorn
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.guard import RequestGuard, RequestLimitExceeded
@@ -109,17 +109,14 @@ def health() -> HealthResponse:
 @app.post("/ask", response_model=AskResponse)
 def ask(
     payload: AskRequest,
-    request: Request,
     service: ServiceDependency,
     guard: GuardDependency,
     turnstile: TurnstileDependency,
 ) -> AskResponse:
-    # X-Forwarded-For is caller-controlled unless every proxy hop is trusted.
-    client_id = request.client.host if request.client else "unknown"
-
     try:
-        turnstile.verify(payload.turnstile_token, client_id)
-        guard.admit(client_id)
+        # 방문자 IP는 Cloud Run 프록시 뒤에서 신뢰할 수 없으므로 사용하지 않는다.
+        turnstile.verify(payload.turnstile_token)
+        guard.admit()
         with guard.concurrency_slot():
             return service.ask(payload.question, payload.top_k)
     except RequestLimitExceeded as error:
@@ -149,14 +146,7 @@ def ask(
             status_code=503,
             detail={"code": "TURNSTILE_UNAVAILABLE", "message": str(error)},
         ) from error
-    except RuntimeError as error:
-        raise HTTPException(
-            status_code=503,
-            detail={
-                "code": "SERVICE_UNAVAILABLE",
-                "message": "논문 검색 서비스가 일시적으로 응답하지 않습니다.",
-            },
-        ) from error
+    # 그 밖의 예외는 자체 결함이므로 500으로 드러내 로그에서 상류 장애와 구분한다.
 
 
 def run() -> None:

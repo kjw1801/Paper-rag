@@ -84,15 +84,12 @@ def test_request_guard_becomes_429_with_retry_after() -> None:
 
     try:
         with TestClient(app) as client:
-            first = client.post(
-                "/ask",
-                json={"question": "첫 번째 질문입니다"},
-                headers={"x-forwarded-for": "203.0.113.10"},
-            )
+            first = client.post("/ask", json={"question": "첫 번째 질문입니다"})
             second = client.post(
                 "/ask",
                 json={"question": "두 번째 질문입니다"},
-                headers={"x-forwarded-for": "203.0.113.10"},
+                # 호출자가 IP 헤더를 바꿔도 인스턴스 전체 한도는 그대로 적용된다.
+                headers={"x-forwarded-for": "203.0.113.99"},
             )
     finally:
         app.dependency_overrides.clear()
@@ -101,3 +98,21 @@ def test_request_guard_becomes_429_with_retry_after() -> None:
     assert second.status_code == 429
     assert second.headers["retry-after"] == "60"
     assert second.json()["detail"]["code"] == "DEMO_RATE_LIMITED"
+
+
+class BrokenService:
+    def ask(self, _question: str, _top_k: int) -> AskResponse:
+        raise KeyError("page")
+
+
+def test_internal_defects_are_not_disguised_as_service_outage() -> None:
+    """자체 결함은 503이 아니라 500으로 드러나야 로그에서 상류 장애와 구분된다."""
+    app.dependency_overrides[get_service] = lambda: BrokenService()
+
+    try:
+        with TestClient(app, raise_server_exceptions=False) as client:
+            response = client.post("/ask", json={"question": "질문입니다"})
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 500

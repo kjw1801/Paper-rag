@@ -5,7 +5,7 @@
     uv run python scripts/evaluate.py --min-relevance 0.5 --json data/evaluation.json
     uv run python scripts/evaluate.py --delay 5   # 무료 티어 분당 한도 회피
 
-Gemini 무료 티어는 모델별 일일 요청 수 제한이 있어(2026-09 기준 gemini-3.6-flash 20회)
+Gemini 무료 티어는 모델별로 일일 요청 수 제한이 달라 GEMINI_CHAT_MODEL 설정에 좌우된다.
 한도에 걸린 질문은 error로 기록하고 계속 진행한다.
 """
 

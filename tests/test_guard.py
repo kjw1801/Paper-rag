@@ -11,31 +11,32 @@ class Clock:
         return self.value
 
 
-def test_limits_all_clients_globally_per_minute() -> None:
+def test_limits_every_request_globally_per_minute() -> None:
+    """방문자를 구분하지 않으므로 분당 한도는 인스턴스 전체에 적용된다."""
     clock = Clock()
     guard = RequestGuard(per_minute=2, daily_limit=10, max_concurrent=1, clock=clock)
 
-    guard.admit("client-a")
-    guard.admit("client-a")
+    guard.admit()
+    guard.admit()
     with pytest.raises(RequestLimitExceeded) as caught:
-        guard.admit("client-b")
+        guard.admit()
 
     assert caught.value.retry_after == 60
     clock.value += 60
-    guard.admit("client-b")
+    guard.admit()
 
 
 def test_limits_total_requests_per_utc_day() -> None:
     clock = Clock()
     guard = RequestGuard(per_minute=10, daily_limit=2, max_concurrent=1, clock=clock)
 
-    guard.admit("client-a")
-    guard.admit("client-b")
+    guard.admit()
+    guard.admit()
     with pytest.raises(RequestLimitExceeded, match="오늘의"):
-        guard.admit("client-c")
+        guard.admit()
 
     clock.value += 24 * 60 * 60
-    guard.admit("client-c")
+    guard.admit()
 
 
 def test_limits_concurrent_model_calls() -> None:

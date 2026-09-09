@@ -77,7 +77,7 @@ cp .env.example .env
 
 ```dotenv
 GOOGLE_API_KEY=your_key_here
-GEMINI_CHAT_MODEL=gemini-3.6-flash
+GEMINI_CHAT_MODEL=gemini-3.5-flash-lite
 GEMINI_EMBEDDING_MODEL=models/gemini-embedding-001
 RAG_MIN_RELEVANCE=0.60
 TURNSTILE_REQUIRED=0
@@ -195,8 +195,8 @@ uv run pytest
 | `CORS_ALLOWED_ORIGINS` | React 배포 주소를 쉼표로 구분해 추가 (기본값은 localhost:3000만 허용) |
 | `RAG_INDEX_DIR` | Chroma 인덱스 경로. `data/chroma/`는 Git에 포함되지 않으므로 영구 디스크 경로를 지정 |
 | `RAG_BUILD_INDEX_ON_STARTUP=1` | 인덱스가 없으면 서버 시작 시 한 번 생성 (임베딩 호출 발생). 파일 잠금으로 중복 생성을 막지만 worker 1개로 시작하는 것을 권장 |
-| `RAG_RATE_LIMIT_PER_MINUTE` | 같은 IP가 1분 동안 보낼 수 있는 질문 수 (기본 5) |
-| `RAG_DAILY_REQUEST_LIMIT` | 인스턴스가 UTC 하루 동안 처리할 질문 수 (기본 50) |
+| `RAG_RATE_LIMIT_PER_MINUTE` | 인스턴스 전체가 1분 동안 처리할 질문 수 (기본 15) |
+| `RAG_DAILY_REQUEST_LIMIT` | 인스턴스가 UTC 하루 동안 처리할 질문 수 (기본 500) |
 | `RAG_MAX_CONCURRENT_REQUESTS` | 동시에 실행할 Gemini 요청 수 (기본 2) |
 | `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile 비밀 키. 백엔드에서만 관리 |
 | `TURNSTILE_REQUIRED=1` | 공개 배포에서 토큰 검증을 필수화 |

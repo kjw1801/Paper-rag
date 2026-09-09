@@ -194,7 +194,7 @@ class RAGService:
         )
 
         llm = ChatGoogleGenerativeAI(
-            model=os.getenv("GEMINI_CHAT_MODEL", "gemini-3.6-flash"),
+            model=os.getenv("GEMINI_CHAT_MODEL", "gemini-3.5-flash-lite"),
             response_mime_type="application/json",
         )
 
