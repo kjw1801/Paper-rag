@@ -1,3 +1,4 @@
+import shutil
 from pathlib import Path
 
 import chromadb
@@ -75,15 +76,22 @@ def test_rebuild_replaces_index_and_cleans_up(tmp_path: Path) -> None:
     ]
 
 
-def test_repository_index_matches_the_current_pdf_chunks() -> None:
+def test_repository_index_matches_the_current_pdf_chunks(tmp_path: Path) -> None:
     """이미지에 넣는 인덱스가 PDF 최신 청크와 본문·페이지까지 같아야 한다."""
     from backend.ingest import load_pdf_pages, split_pages
-    from backend.service import COLLECTION_NAME, INDEX_PATH, PDF_PATH
+    from backend.service import COLLECTION_NAME, PDF_PATH, ROOT_DIR
 
+    # RAG_INDEX_DIR과 무관하게 저장소에 커밋된 인덱스를 본다
+    repository_index = ROOT_DIR / "data" / "chroma"
     chunks = split_pages(load_pdf_pages(PDF_PATH))
-    assert index_document_count(INDEX_PATH) == len(chunks) == 21
 
-    client = chromadb.PersistentClient(path=str(INDEX_PATH))
+    # Chroma는 열기만 해도 sqlite를 건드리므로 추적 파일 대신 사본을 연다
+    copied = tmp_path / "chroma"
+    copied.mkdir()
+    shutil.copy2(repository_index / "chroma.sqlite3", copied / "chroma.sqlite3")
+    assert index_document_count(copied) == len(chunks) == 21
+
+    client = chromadb.PersistentClient(path=str(copied))
     stored = client.get_collection(COLLECTION_NAME).get(
         include=["documents", "metadatas"]
     )

@@ -50,13 +50,19 @@ def test_ask_endpoint_returns_answer_and_pdf_page() -> None:
     assert body["cited_pages"] == [5]
 
 
-def test_health_reports_document_count() -> None:
+@pytest.mark.parametrize(("count", "ready"), [(21, True), (0, False)])
+def test_health_reports_document_count(
+    monkeypatch: pytest.MonkeyPatch, count: int, ready: bool
+) -> None:
+    # 실제 인덱스를 열면 추적 중인 sqlite가 변경되므로 문서 수만 대체한다
+    monkeypatch.setattr("backend.api.index_document_count", lambda: count)
+
     with TestClient(app) as client:
         body = client.get("/health").json()
 
     assert body["status"] == "ok"
-    assert body["document_count"] >= 0
-    assert body["index_ready"] == (body["document_count"] > 0)
+    assert body["document_count"] == count
+    assert body["index_ready"] is ready
     # 키 설정 여부는 외부에 알릴 이유가 없다
     assert "api_key_configured" not in body
 

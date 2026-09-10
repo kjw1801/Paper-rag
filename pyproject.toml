@@ -25,6 +25,7 @@ pythonpath = ["."]
 testpaths = ["tests"]
 
 [tool.pyright]
+pythonVersion = "3.12"
 venvPath = "."
 venv = ".venv"
 include = ["backend", "scripts", "tests", "main.py"]

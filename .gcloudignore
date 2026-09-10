@@ -10,6 +10,7 @@
 __pycache__
 *.pyc
 
+data/chroma/*/
 data/*.lock
 data/evaluation.json
 tmp
