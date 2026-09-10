@@ -22,7 +22,7 @@
 - 900자 청크, 150자 overlap으로 분할
 - 원본 PDF 페이지 번호를 각 청크의 metadata로 보존
 - Gemini `gemini-embedding-001` 임베딩
-- 서버 없이 파일로 저장되는 로컬 Chroma 인덱스
+- 서버 없이 파일로 저장되고 배포 이미지에 함께 들어가는 Chroma 인덱스
 - LangChain prompt/model/output parser 파이프라인
 - Gemini JSON 모드로 `answer`, `has_evidence`, `cited_pages`를 구조화해 받고, `grounded` 판정을 답변 문자열과 분리
 - JSON 파싱 실패나 검색된 페이지를 인용하지 않은 답변은 근거 없음으로 차단 (fail-closed)
@@ -193,8 +193,8 @@ uv run pytest
 | 변수 | 용도 |
 |---|---|
 | `CORS_ALLOWED_ORIGINS` | React 배포 주소를 쉼표로 구분해 추가 (기본값은 localhost:3000만 허용) |
-| `RAG_INDEX_DIR` | Chroma 인덱스 경로. `data/chroma/`는 Git에 포함되지 않으므로 영구 디스크 경로를 지정 |
-| `RAG_BUILD_INDEX_ON_STARTUP=1` | 인덱스가 없으면 서버 시작 시 한 번 생성 (임베딩 호출 발생). 파일 잠금으로 중복 생성을 막지만 worker 1개로 시작하는 것을 권장 |
+| `RAG_INDEX_DIR` | Chroma 인덱스 경로. 배포 이미지에는 `/app/data/chroma`로 인덱스가 들어 있습니다 |
+| `RAG_BUILD_INDEX_ON_STARTUP` | 배포에서는 `0`입니다. `1`로 두면 인덱스가 없을 때 시작 시 생성하며 임베딩 호출이 발생합니다. 생성에 실패해도 컨테이너는 뜨고 `/health`가 준비 안 됨을 알립니다 |
 | `RAG_RATE_LIMIT_PER_MINUTE` | 인스턴스 전체가 1분 동안 처리할 질문 수 (기본 15) |
 | `RAG_DAILY_REQUEST_LIMIT` | 인스턴스가 UTC 하루 동안 처리할 질문 수 (기본 500) |
 | `RAG_MAX_CONCURRENT_REQUESTS` | 동시에 실행할 Gemini 요청 수 (기본 2) |
@@ -206,6 +206,8 @@ uv run pytest
 | `RAG_RELOAD=0` | 자동 리로드 끄기 |
 
 React 쪽은 `NEXT_PUBLIC_API_URL`에 백엔드 배포 주소를, `NEXT_PUBLIC_TURNSTILE_SITE_KEY`에 공개 사이트 키를 넣습니다. 인덱스 재생성은 임시 디렉터리에 만든 뒤 교체하므로 실패해도 기존 인덱스가 유지됩니다.
+
+`data/chroma/chroma.sqlite3`는 저장소에 포함해 Docker 이미지로 함께 배포합니다. HNSW 세그먼트 디렉터리는 sqlite에서 다시 만들어지므로 Git에서 제외합니다. 덕분에 콜드 스타트마다 Gemini 임베딩을 다시 호출하지 않습니다. 데이터나 청크 설정을 바꾸면 `--rebuild`로 다시 만들어 커밋해야 합니다.
 
 ### 공개 데모 보호
 

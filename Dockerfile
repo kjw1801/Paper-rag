@@ -14,5 +14,7 @@ RUN uv sync --frozen --no-dev
 COPY backend ./backend
 COPY main.py ./main.py
 COPY data/paper.pdf ./data/paper.pdf
+# 이미지에 인덱스를 넣어 콜드 스타트마다 임베딩을 다시 만들지 않는다
+COPY data/chroma ./data/chroma
 
 CMD ["sh", "-c", "uvicorn backend.api:app --host 0.0.0.0 --port ${PORT:-8080}"]

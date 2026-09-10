@@ -57,6 +57,8 @@ def test_health_reports_document_count() -> None:
     assert body["status"] == "ok"
     assert body["document_count"] >= 0
     assert body["index_ready"] == (body["document_count"] > 0)
+    # 키 설정 여부는 외부에 알릴 이유가 없다
+    assert "api_key_configured" not in body
 
 
 class RateLimitedService:

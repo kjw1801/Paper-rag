@@ -23,7 +23,6 @@ class AskResponse(BaseModel):
 
 class HealthResponse(BaseModel):
     status: str
-    api_key_configured: bool
     index_ready: bool
     document_count: int
     turnstile_enabled: bool

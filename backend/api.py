@@ -1,3 +1,4 @@
+import logging
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -14,11 +15,12 @@ from backend.service import (
     RAGService,
     UpstreamRateLimited,
     UpstreamUnavailable,
-    api_key_configured,
     build_index,
     index_document_count,
 )
 from backend.turnstile import TurnstileRejected, TurnstileUnavailable, TurnstileVerifier
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_ORIGINS = ["http://localhost:3000", "http://127.0.0.1:3000"]
 
@@ -39,10 +41,14 @@ def build_index_on_startup() -> bool:
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-    # 배포 서버처럼 인덱스가 없는 환경에서는 시작 시 한 번 생성한다.
+    # 배포 이미지에는 인덱스가 들어 있어 기본값은 생성하지 않는 것이다.
+    # 켜 두더라도 생성 실패로 컨테이너가 죽지 않도록 흡수하고 /health가 준비 상태를 알린다.
     if build_index_on_startup() and index_document_count() == 0:
-        count = build_index()
-        print(f"Chroma 인덱스를 생성했습니다 (청크 {count}개)")
+        try:
+            count = build_index()
+            logger.info("Chroma 인덱스를 생성했습니다 (청크 %d개)", count)
+        except Exception:
+            logger.exception("Chroma 인덱스 생성에 실패했습니다.")
     yield
 
 
@@ -99,7 +105,6 @@ def health() -> HealthResponse:
     count = index_document_count()
     return HealthResponse(
         status="ok",
-        api_key_configured=api_key_configured(),
         index_ready=count > 0,
         document_count=count,
         turnstile_enabled=get_turnstile_verifier().enabled,
