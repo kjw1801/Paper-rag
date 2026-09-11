@@ -296,10 +296,14 @@ export default function Home() {
               {turnstileSiteKey && (
                 <div className="mt-4 min-h-8">
                   <div ref={turnstileContainerRef} />
-                  {turnstileError && (
+                  {turnstileError ? (
                     <p className="mt-2 text-xs text-orange-700">
                       보안 확인을 불러오지 못했습니다. 페이지를 새로고침해 주세요.
                     </p>
+                  ) : (
+                    !turnstileReady && (
+                      <p className="mt-2 text-xs text-slate-500">질문 기능을 준비하고 있습니다…</p>
+                    )
                   )}
                 </div>
               )}
