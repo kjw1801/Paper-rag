@@ -9,7 +9,10 @@
 __pycache__
 *.pyc
 
-data/chroma/*/
+# Docker는 패턴에 filepath.Clean을 적용해 끝의 '/'를 떼므로 'data/chroma/*/'로는
+# 디렉터리만 제외할 수 없다. 세그먼트 폴더만 빼고 sqlite는 명시적으로 되살린다.
+data/chroma/*
+!data/chroma/chroma.sqlite3
 data/*.lock
 data/evaluation.json
 tmp
