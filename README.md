@@ -205,7 +205,7 @@ uv run pytest
 | `HOST=0.0.0.0`, `PORT` | 배포 플랫폼이 요구하는 바인딩 주소와 포트 |
 | `RAG_RELOAD=0` | 자동 리로드 끄기 |
 
-React 쪽은 `NEXT_PUBLIC_API_URL`에 백엔드 배포 주소를, `NEXT_PUBLIC_TURNSTILE_SITE_KEY`에 공개 사이트 키를 넣습니다. 인덱스 재생성은 임시 디렉터리에 만든 뒤 교체하므로 실패해도 기존 인덱스가 유지됩니다.
+React 쪽은 `NEXT_PUBLIC_API_URL`에 백엔드 배포 주소를, `NEXT_PUBLIC_TURNSTILE_SITE_KEY`에 공개 사이트 키를 넣습니다. 프런트엔드 프로덕션 빌드 전 `web/.env.production`에 이 두 값을 설정해야 합니다. Sites 런타임 환경변수는 Vite의 빌드 시점에 자동 주입되지 않으며, 두 값이 없거나 API 주소가 로컬·비HTTPS 주소이면 빌드가 실패합니다. 인덱스 재생성은 임시 디렉터리에 만든 뒤 교체하므로 실패해도 기존 인덱스가 유지됩니다.
 
 `data/chroma/chroma.sqlite3`는 저장소에 포함해 Docker 이미지로 함께 배포합니다. HNSW 세그먼트 디렉터리는 sqlite에서 다시 만들어지므로 Git에서 제외합니다. 덕분에 콜드 스타트마다 Gemini 임베딩을 다시 호출하지 않습니다. 데이터나 청크 설정을 바꾸면 `--rebuild`로 다시 만들어 커밋해야 합니다.
 
