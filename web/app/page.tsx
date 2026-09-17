@@ -103,6 +103,9 @@ export default function Home() {
   const [error, setError] = useState<ErrorState | null>(null);
   const [loading, setLoading] = useState(false);
   const [stats, setStats] = useState<Stats | null>(null);
+  // 조회에 실패했을 때만 카드를 감춘다. 불러오는 동안에는 자리를 잡아 두어야
+  // 숫자가 도착할 때 레이아웃이 튀지 않는다.
+  const [statsUnavailable, setStatsUnavailable] = useState(false);
   const [turnstileReady, setTurnstileReady] = useState(false);
   const [turnstileError, setTurnstileError] = useState(false);
   const turnstileContainerRef = useRef<HTMLDivElement>(null);
@@ -118,12 +121,15 @@ export default function Home() {
       });
       if (!response.ok) {
         setStats(null);
+        setStatsUnavailable(true);
         return;
       }
       setStats((await response.json()) as Stats);
+      setStatsUnavailable(false);
     } catch {
       // 읽지 못하면 옛 숫자를 남기지 않고 카드를 숨긴다.
       setStats(null);
+      setStatsUnavailable(true);
     }
   }, []);
 
@@ -614,7 +620,7 @@ export default function Home() {
               </CardContent>
             </Card>
 
-            {stats && (
+            {!statsUnavailable && (
               <Card className="border-slate-200 bg-white">
                 <CardContent className="p-6">
                   <div className="mb-4 flex items-center gap-2 text-slate-900">
@@ -623,24 +629,26 @@ export default function Home() {
                   </div>
                   <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
                     {[
-                      ['오늘 방문', stats.today_visits],
-                      ['누적 방문', stats.total_visits],
-                      ['오늘 질문', stats.today_questions],
-                      ['누적 질문', stats.total_questions],
+                      ['오늘 방문', stats?.today_visits],
+                      ['누적 방문', stats?.total_visits],
+                      ['오늘 질문', stats?.today_questions],
+                      ['누적 질문', stats?.total_questions],
                     ].map(([label, value]) => (
                       <div key={label}>
                         <dt className="text-xs text-slate-500">{label}</dt>
                         <dd className="text-xl font-semibold tabular-nums text-slate-900">
-                          {value.toLocaleString('ko-KR')}
+                          {typeof value === 'number'
+                            ? value.toLocaleString('ko-KR')
+                            : '—'}
                         </dd>
                       </div>
                     ))}
                   </dl>
-                  {stats.started_at && (
-                    <p className="mt-4 border-t border-slate-100 pt-3 text-xs text-slate-400">
-                      {stats.started_at.replaceAll('-', '.')}부터 집계
-                    </p>
-                  )}
+                  <p className="mt-4 border-t border-slate-100 pt-3 text-xs text-slate-400">
+                    {stats?.started_at
+                      ? `${stats.started_at.replaceAll('-', '.')}부터 집계`
+                      : '불러오는 중…'}
+                  </p>
                 </CardContent>
               </Card>
             )}
