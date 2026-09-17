@@ -15,7 +15,9 @@ def disable_turnstile_for_api_tests():
         required=False,
     )
     yield
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_turnstile_verifier, None)
+    app.dependency_overrides.pop(get_service, None)
+    app.dependency_overrides.pop(get_request_guard, None)
 
 
 class StubService:

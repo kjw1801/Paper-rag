@@ -28,6 +28,16 @@ class HealthResponse(BaseModel):
     turnstile_enabled: bool
 
 
+class StatsResponse(BaseModel):
+    """공개 카운터. 고유 방문자가 아니라 방문 횟수다."""
+
+    today_visits: int
+    today_questions: int
+    total_visits: int
+    total_questions: int
+    started_at: str | None = None
+
+
 class GroundedAnswer(BaseModel):
     """Gemini가 반환하는 구조화된 답변."""
 

@@ -14,7 +14,7 @@ class RequestLimitExceeded(RuntimeError):
         self.retry_after = max(1, retry_after)
 
 
-def _positive_int(name: str, default: int) -> int:
+def positive_int(name: str, default: int) -> int:
     raw = os.getenv(name, str(default))
     try:
         value = int(raw)
@@ -55,9 +55,9 @@ class RequestGuard:
     @classmethod
     def from_environment(cls) -> "RequestGuard":
         return cls(
-            per_minute=_positive_int("RAG_RATE_LIMIT_PER_MINUTE", 15),
-            daily_limit=_positive_int("RAG_DAILY_REQUEST_LIMIT", 500),
-            max_concurrent=_positive_int("RAG_MAX_CONCURRENT_REQUESTS", 2),
+            per_minute=positive_int("RAG_RATE_LIMIT_PER_MINUTE", 15),
+            daily_limit=positive_int("RAG_DAILY_REQUEST_LIMIT", 500),
+            max_concurrent=positive_int("RAG_MAX_CONCURRENT_REQUESTS", 2),
         )
 
     @staticmethod

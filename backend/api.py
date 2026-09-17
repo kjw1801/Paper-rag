@@ -9,8 +9,8 @@ import uvicorn
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.guard import RequestGuard, RequestLimitExceeded
-from backend.models import AskRequest, AskResponse, HealthResponse
+from backend.guard import RequestGuard, RequestLimitExceeded, positive_int
+from backend.models import AskRequest, AskResponse, HealthResponse, StatsResponse
 from backend.service import (
     RAGService,
     UpstreamRateLimited,
@@ -18,6 +18,7 @@ from backend.service import (
     build_index,
     index_document_count,
 )
+from backend.stats import StatsStore
 from backend.turnstile import TurnstileRejected, TurnstileUnavailable, TurnstileVerifier
 
 logger = logging.getLogger(__name__)
@@ -93,6 +94,31 @@ GuardDependency = Annotated[RequestGuard, Depends(get_request_guard)]
 
 
 @lru_cache(maxsize=1)
+def get_visit_guard() -> RequestGuard:
+    """방문 집계 전용 제한기.
+
+    질문 한도를 함께 쓰면 방문이 예산을 먹어 정작 질문이 막힌다. 방문은 Turnstile로
+    막을 수 없어 조작을 완전히 차단하지는 못하고, 이 한도는 완화책일 뿐이다.
+    """
+    return RequestGuard(
+        per_minute=positive_int("RAG_VISIT_RATE_LIMIT_PER_MINUTE", 60),
+        daily_limit=positive_int("RAG_VISIT_DAILY_LIMIT", 5000),
+        max_concurrent=positive_int("RAG_VISIT_MAX_CONCURRENT_REQUESTS", 8),
+    )
+
+
+VisitGuardDependency = Annotated[RequestGuard, Depends(get_visit_guard)]
+
+
+@lru_cache(maxsize=1)
+def get_stats_store() -> StatsStore:
+    return StatsStore.from_environment()
+
+
+StatsDependency = Annotated[StatsStore, Depends(get_stats_store)]
+
+
+@lru_cache(maxsize=1)
 def get_turnstile_verifier() -> TurnstileVerifier:
     return TurnstileVerifier.from_environment()
 
@@ -117,13 +143,21 @@ def ask(
     service: ServiceDependency,
     guard: GuardDependency,
     turnstile: TurnstileDependency,
+    stats: StatsDependency,
 ) -> AskResponse:
     try:
         # 방문자 IP는 Cloud Run 프록시 뒤에서 신뢰할 수 없으므로 사용하지 않는다.
         turnstile.verify(payload.turnstile_token)
         guard.admit()
         with guard.concurrency_slot():
-            return service.ask(payload.question, payload.top_k)
+            answer = service.ask(payload.question, payload.top_k)
+        # 집계는 답변이 나온 뒤의 부수 작업이다. 저장소 구현이 무엇으로 바뀌든
+        # 여기서 샌 예외가 답변을 삼키면 안 되므로 폭넓게 막는다.
+        try:
+            stats.record_question()
+        except Exception:
+            logger.warning("질문 집계에 실패했습니다.", exc_info=True)
+        return answer
     except RequestLimitExceeded as error:
         raise HTTPException(
             status_code=429,
@@ -152,6 +186,45 @@ def ask(
             detail={"code": "TURNSTILE_UNAVAILABLE", "message": str(error)},
         ) from error
     # 그 밖의 예외는 자체 결함이므로 500으로 드러내 로그에서 상류 장애와 구분한다.
+
+
+@app.post("/stats/visit", status_code=204)
+def record_visit(guard: VisitGuardDependency, stats: StatsDependency) -> None:
+    """방문을 세기만 한다.
+
+    숫자를 함께 돌려주면 증가는 됐는데 조회만 실패했을 때 프런트가 재시도하면서
+    같은 방문이 두 번 세어진다. 숫자는 별도 GET으로 읽는다.
+    """
+    try:
+        guard.admit()
+        with guard.concurrency_slot():
+            stats.record_visit()
+    except RequestLimitExceeded as error:
+        raise HTTPException(
+            status_code=429,
+            detail={"code": "VISIT_RATE_LIMITED", "message": str(error)},
+            headers={"Retry-After": str(error.retry_after)},
+        ) from error
+
+
+@app.get("/stats", response_model=StatsResponse)
+def read_stats(stats: StatsDependency) -> StatsResponse:
+    snapshot = stats.snapshot()
+    if snapshot is None:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "STATS_UNAVAILABLE",
+                "message": "통계를 불러오지 못했습니다.",
+            },
+        )
+    return StatsResponse(
+        today_visits=snapshot.today_visits,
+        today_questions=snapshot.today_questions,
+        total_visits=snapshot.total_visits,
+        total_questions=snapshot.total_questions,
+        started_at=snapshot.started_at,
+    )
 
 
 def run() -> None:

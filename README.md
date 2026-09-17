@@ -198,6 +198,10 @@ uv run pytest
 | `RAG_RATE_LIMIT_PER_MINUTE` | 인스턴스 전체가 1분 동안 처리할 질문 수 (기본 15) |
 | `RAG_DAILY_REQUEST_LIMIT` | 인스턴스가 UTC 하루 동안 처리할 질문 수 (기본 500) |
 | `RAG_MAX_CONCURRENT_REQUESTS` | 동시에 실행할 Gemini 요청 수 (기본 2) |
+| `RAG_STATS_SERVICE_ID` | Firestore `services/{id}` 문서 이름 (기본 `paper`) |
+| `RAG_VISIT_RATE_LIMIT_PER_MINUTE` | 방문 집계 분당 한도 (기본 60). 질문 한도와 분리한다 |
+| `RAG_VISIT_DAILY_LIMIT` | 방문 집계 하루 한도 (기본 5000) |
+| `RAG_VISIT_MAX_CONCURRENT_REQUESTS` | 동시에 처리할 방문 집계 수 (기본 8) |
 | `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile 비밀 키. 백엔드에서만 관리 |
 | `TURNSTILE_REQUIRED=1` | 공개 배포에서 토큰 검증을 필수화 |
 | `TURNSTILE_EXPECTED_HOSTNAMES` | `paper.woojulab.com` 등 허용 호스트 |
