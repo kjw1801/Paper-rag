@@ -156,18 +156,24 @@ class StatsStore:
             logger.warning("통계 조회에 실패했습니다.", exc_info=True)
             return None
 
+        today_visits = int(day.get("visits", 0))
+        today_questions = int(day.get("questions", 0))
         total_visits = int(service.get("total_visits", 0))
         total_questions = int(service.get("total_questions", 0))
 
         return StatsSnapshot(
-            today_visits=int(day.get("visits", 0)),
-            today_questions=int(day.get("questions", 0)),
+            today_visits=today_visits,
+            today_questions=today_questions,
             total_visits=total_visits,
             total_questions=total_questions,
             started_at=self._started_at(
                 service_document,
                 service.get("started_at"),
-                counted=total_visits > 0 or total_questions > 0,
+                # 부모 문서를 지워도 days/ 하위는 남는다. 누적만 보면 일일 숫자만
+                # 남은 상태를 놓치므로 넷 다 본다.
+                counted=any(
+                    (today_visits, today_questions, total_visits, total_questions)
+                ),
             ),
         )
 

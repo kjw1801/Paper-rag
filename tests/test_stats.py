@@ -165,6 +165,7 @@ class FakeDocument:
     def __init__(self, data: dict | None = None) -> None:
         self.data = data
         self.merged: list[dict] = []
+        self.day: FakeDocument | None = None
 
     def create(self, payload: dict) -> None:
         if self.data is not None:
@@ -180,7 +181,9 @@ class FakeDocument:
         self.data = {**(self.data or {}), **payload}
 
     def collection(self, _name: str) -> "FakeCollection":
-        return FakeCollection()
+        if self.day is None:
+            return FakeCollection()
+        return FakeCollection({today_in_seoul(): self.day})
 
 
 class FakeCollection:
@@ -203,7 +206,11 @@ class FakeBatch:
 
 
 class FakeClient:
-    def __init__(self, service_document: FakeDocument) -> None:
+    def __init__(
+        self, service_document: FakeDocument, day: FakeDocument | None = None
+    ) -> None:
+        if day is not None:
+            service_document.day = day
         self._collection = FakeCollection({"paper": service_document})
 
     def collection(self, _name: str) -> FakeCollection:
@@ -276,3 +283,20 @@ def test_snapshot_hides_the_date_when_the_repair_write_fails() -> None:
     assert snapshot is not None
     assert snapshot.total_visits == 4
     assert snapshot.started_at is None
+
+
+def test_snapshot_repairs_when_only_the_daily_numbers_survive() -> None:
+    """부모 문서를 지워도 days/ 하위는 남는다. 그때도 시작일을 복구해야 한다."""
+    service_document = FakeDocument({})
+    day_document = FakeDocument({"visits": 2})
+    store = StatsStore(
+        "paper", client_factory=lambda: FakeClient(service_document, day_document)
+    )
+
+    snapshot = store.snapshot()
+
+    assert snapshot is not None
+    assert snapshot.today_visits == 2
+    assert snapshot.total_visits == 0
+    assert snapshot.started_at == today_in_seoul()
+    assert service_document.merged == [{"started_at": today_in_seoul()}]
