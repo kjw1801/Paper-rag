@@ -156,10 +156,38 @@ class StatsStore:
             logger.warning("통계 조회에 실패했습니다.", exc_info=True)
             return None
 
+        total_visits = int(service.get("total_visits", 0))
+        total_questions = int(service.get("total_questions", 0))
+
         return StatsSnapshot(
             today_visits=int(day.get("visits", 0)),
             today_questions=int(day.get("questions", 0)),
-            total_visits=int(service.get("total_visits", 0)),
-            total_questions=int(service.get("total_questions", 0)),
-            started_at=service.get("started_at"),
+            total_visits=total_visits,
+            total_questions=total_questions,
+            started_at=self._started_at(
+                service_document,
+                service.get("started_at"),
+                counted=total_visits > 0 or total_questions > 0,
+            ),
         )
+
+    def _started_at(
+        self, service_document: Any, stored: str | None, *, counted: bool
+    ) -> str | None:
+        """숫자는 있는데 시작일만 비어 있으면 이 자리에서 복구한다.
+
+        집계 시작일은 프로세스 메모리의 플래그로 한 번만 쓰는데, 문서가 밖에서
+        지워지면 그 프로세스는 다시 쓰지 않는다. 실제로 운영에서 한 번 그렇게 됐다.
+        조회는 어차피 서비스 문서를 읽으므로 여기서는 추가 읽기가 들지 않는다.
+        """
+        if stored or not counted:
+            return stored
+
+        repaired = today_in_seoul()
+        try:
+            service_document.set({"started_at": repaired}, merge=True)
+        except STORAGE_ERRORS:
+            # 저장하지 못한 날짜를 보여주면 다음 조회에서 값이 달라진다. 숨긴다.
+            logger.warning("집계 시작일을 복구하지 못했습니다.", exc_info=True)
+            return None
+        return repaired

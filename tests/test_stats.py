@@ -235,3 +235,44 @@ def test_started_at_is_not_rewritten_when_it_already_exists() -> None:
     assert service_document.data is not None
     assert service_document.data["started_at"] == "2026-01-01"
     assert service_document.merged == []
+
+
+def test_snapshot_repairs_a_missing_started_at() -> None:
+    """숫자는 있는데 시작일만 빈 문서는 조회하면서 스스로 고친다."""
+    service_document = FakeDocument({"total_visits": 4, "total_questions": 1})
+    store = StatsStore("paper", client_factory=lambda: FakeClient(service_document))
+
+    snapshot = store.snapshot()
+
+    assert snapshot is not None
+    assert snapshot.started_at == today_in_seoul()
+    assert service_document.merged == [{"started_at": today_in_seoul()}]
+
+
+def test_snapshot_leaves_an_empty_counter_without_a_started_at() -> None:
+    """아무도 다녀가지 않았는데 시작일부터 찍으면 집계가 시작된 척이 된다."""
+    service_document = FakeDocument({})
+    store = StatsStore("paper", client_factory=lambda: FakeClient(service_document))
+
+    snapshot = store.snapshot()
+
+    assert snapshot is not None
+    assert snapshot.started_at is None
+    assert service_document.merged == []
+
+
+def test_snapshot_hides_the_date_when_the_repair_write_fails() -> None:
+    """저장되지 않은 날짜를 보여주면 다음 조회에서 값이 달라진다."""
+
+    class UnwritableDocument(FakeDocument):
+        def set(self, payload: dict, merge: bool = False) -> None:
+            raise OSError("쓰기 불가")
+
+    service_document = UnwritableDocument({"total_visits": 4})
+    store = StatsStore("paper", client_factory=lambda: FakeClient(service_document))
+
+    snapshot = store.snapshot()
+
+    assert snapshot is not None
+    assert snapshot.total_visits == 4
+    assert snapshot.started_at is None
